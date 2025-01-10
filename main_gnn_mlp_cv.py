@@ -10,16 +10,10 @@ import torch
 from torch.utils.data import Subset
 from sklearn.model_selection import StratifiedKFold
 import numpy as np
-from torch_geometric import seed_everything
 from torch.backends import cudnn
 from _delete.model_paper import GCNHomConv
 from glob import glob
-import yaml
-
-def load_config(config_path):
-    with open(config_path, "r") as file:
-        config = yaml.safe_load(file)
-    return config
+from utils import load_config, seed_everything
 
 def train(loader, model, architecture, batch_size, criterion, optimizer):
     model.train()
@@ -325,7 +319,7 @@ if __name__ == "__main__":
     # folds = config["training"]["folds"]
     # seed = config["training"]["seed"]
 
-    for dataset in ["sarcoma"]:                                 # "sarcoma", "headneck"
+    for dataset in ["sarcoma"]:                                 # "sarcoma_T1", "sarcoma_T2" "headneck"
         for sequence in ["T1", "T2"]:                           # "T1", "T2"
             for architecture in ["MLP"]:                        # "GCN", "SAGE", "GAT", "MLP"
                 for ratio in [1.00]:                            # 0.25, 0.50, 0.75, 1.00

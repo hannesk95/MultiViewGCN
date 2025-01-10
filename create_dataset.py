@@ -379,11 +379,12 @@ def main(args: argparse.Namespace):
 
     # input_list = glob(os.path.join(args.input_folder, "*.nii.gz"))
     # input_list = glob("/home/johannes/Code/MultiViewGCN/data/deep_learning/*/*/*.nii.gz") # all: t1 t2 train test
-    input_list = glob("/home/johannes/Code/MultiViewGCN/data/deep_learning/*/*/*.nii.gz")
+    input_list = glob("/home/johannes/Code/MultiViewGCN/data/deep_learning/*/*/*.nii.gz") # sarcoma
+    input_list = glob("/home/johannes/Code/MultiViewGCN/data/head_and_neck/*/converted_nii/*/*.nii.gz") # head and neck
     assert len(input_list) != 0, "No input volumes available, check path!"
 
-    img_list = sorted([item for item in input_list if not "label" in item])
-    seg_list = sorted([item for item in input_list if "label" in item])
+    img_list = sorted([item for item in input_list if not "mask" in item])
+    seg_list = sorted([item for item in input_list if "mask" in item])
     assert len(img_list) == len(seg_list)
     print(f"[INFO] Number of images and masks found: {len(img_list)}")
 
@@ -392,7 +393,8 @@ def main(args: argparse.Namespace):
     for i in tqdm(range(len(img_list)), desc="Preprocess Data: "):
 
         patient_id = [img_list[i].split("/")[-1]]
-        patient_id = [temp[:6] if temp.startswith("Sar") else temp[:4] for temp in patient_id][0]
+        # patient_id = [temp[:6] if temp.startswith("Sar") else temp[:4] for temp in patient_id][0] # sarcoma
+        patient_id = patient_id[0].split("_")[0]
 
         # try:
 
@@ -506,7 +508,9 @@ def main(args: argparse.Namespace):
         # patient_id = [temp[:6] if temp.startswith("Sar") else temp[:4] for temp in patient_id][0]
         
         df = pd.read_csv(args.label_csv)
-        label = df[df["ID"] == patient_id].Grading.item()
+        # label = df[df["ID"] == patient_id].Grading.item() # sarcoma
+        label = df[df["id"] == patient_id].hpv.item() # head and neck
+        label = 0 if label == "negative" else 1
 
         data = Data(x=features, edge_index=edge_index, label=torch.tensor(label))
         model_name = args.dinov2_model.split("/")[-1]
@@ -526,7 +530,8 @@ if __name__ == "__main__":
     # start_time = time.time()
 
     data_path = "/home/johannes/Code/MultiViewGCN/data/deep_learning/train/T1"
-    label_path = "/home/johannes/Code/MultiViewGCN/data/patient_metadata.csv"
+    # label_path = "/home/johannes/Code/MultiViewGCN/data/patient_metadata.csv" # sarcoma
+    label_path = "/home/johannes/Code/MultiViewGCN/data/head_and_neck/patient_metadata.csv" # head and neck
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--input_folder", default=data_path, help="Path to folder where volumes and corresponding masks are present.", type=Path)
@@ -539,7 +544,7 @@ if __name__ == "__main__":
     parser.add_argument("--label_csv", default=label_path, help="Path to csv file which contains labels.", type=Path)
     args = parser.parse_args()
 
-    for views in [42]:
+    for views in [1]:
         args.n_views = views
         main(args)
 
