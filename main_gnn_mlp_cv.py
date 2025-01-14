@@ -3,9 +3,9 @@ import sys
 import torch
 import numpy as np
 from torch_geometric.loader import DataLoader
-from dataset import SarcomaDataset, SarcomaDatasetCV
+from dataset import SarcomaDataset, SarcomaDatasetCV, get_data
 from sklearn.metrics import balanced_accuracy_score, roc_auc_score, matthews_corrcoef, f1_score
-from model import GCN, MLP, SAGE, GAT, GNN
+from model import MLP, GNN
 import matplotlib.pyplot as plt
 import torch
 from torch.utils.data import Subset
@@ -15,37 +15,24 @@ from torch.backends import cudnn
 from _delete.model_paper import GCNHomConv
 from glob import glob
 from utils import load_config, seed_everything
+from sklearn.utils.class_weight import compute_class_weight
 
 def train(loader, model, architecture, batch_size, criterion, optimizer):
     model.train()
     for data in loader:
         inputs = data[0].cuda()        
-        labels = data[1].cuda()      
-         
-        match architecture:
-            case "MLP":
-                out = model(inputs.x, batch_size)
-            # case "MLP_axial":
-            #     out = model(inputs.x[::6, :], batch_size)               
-            # case "MLP_acs":
-            #     out = model(inputs.x[::2, :], batch_size)               
-            case "GCN":               
-                out, selected_nodes = model(inputs.x, inputs.edge_index.to(torch.long), inputs.batch)          
-            case "SAGE":               
-                out, selected_nodes = model(inputs.x, inputs.edge_index.to(torch.long), inputs.batch)          
-            case "GAT":               
-                out, selected_nodes = model(inputs.x, inputs.edge_index.to(torch.long), inputs.batch)          
-            # case "GCN_fully":               
-            #     out = model(inputs.x, inputs.edge_index, inputs.batch)          
-            # case "GCNHomConv":             
-            #     out = model(inputs)    
-            #     out = out["graph_pred"]      
+        labels = data[1].cuda()  
+
+        if architecture == "MLP":
+            out = model(inputs.x, batch_size) 
+        else:
+            out, _ = model(inputs.x.to(torch.float32), inputs.edge_index.to(torch.long), inputs.batch)              
+        
         loss = criterion(out, labels)  
         loss.backward()  
         optimizer.step()  
         optimizer.zero_grad() 
         
-
 def eval(loader, split, model, architecture, batch_size, criterion):
     model.eval()
 
@@ -58,44 +45,14 @@ def eval(loader, split, model, architecture, batch_size, criterion):
         inputs = data[0].cuda()        
         labels = data[1].cuda() 
 
-        match architecture:           
-
-            case "MLP":
-                if split == "train":
+        if architecture == "MLP":
+            if split == "train":
                     out = model(inputs.x.to(torch.float32), batch_size)
-                else:
+            else:
                     out = model(inputs.x.to(torch.float32), 1)
-
-            case "GCN":               
-                out, selected_nodes = model(inputs.x.to(torch.float32), inputs.edge_index.to(torch.long), inputs.batch)
-                selected_nodes_list.extend(selected_nodes.detach().cpu().numpy().tolist())
-            
-            case "SAGE":               
-                out, selected_nodes = model(inputs.x.to(torch.float32), inputs.edge_index.to(torch.long), inputs.batch)
-                selected_nodes_list.extend(selected_nodes.detach().cpu().numpy().tolist())
-            
-            case "GAT":               
-                out, selected_nodes = model(inputs.x.to(torch.float32), inputs.edge_index.to(torch.long), inputs.batch)
-                selected_nodes_list.extend(selected_nodes.detach().cpu().numpy().tolist())
-
-            # case "MLP_axial":
-            #     if split == "train":
-            #         out = model(inputs.x[::6, :], batch_size)     
-            #     else:
-            #         out = model(inputs.x[::6, :], 1) 
-
-            # case "MLP_acs":
-            #     if split == "train":
-            #         out = model(inputs.x[::2, :], batch_size)  
-            #     else:
-            #         out = model(inputs.x[::2, :], 1)              
-            
-            # case "GCN_fully":               
-            #     out = model(inputs.x, inputs.edge_index, inputs.batch)
-            
-            # case "GCNHomConv":              
-            #     out = model(inputs) 
-            #     out = out["graph_pred"] 
+        else:
+            out, selected_nodes = model(inputs.x.to(torch.float32), inputs.edge_index.to(torch.long), inputs.batch)
+            selected_nodes_list.extend(selected_nodes.detach().cpu().numpy().tolist())       
         
         loss = criterion(out, labels)        
         pred = out.argmax(dim=1)
@@ -110,94 +67,28 @@ def eval(loader, split, model, architecture, batch_size, criterion):
     mcc = matthews_corrcoef(y_true=true_list, y_pred=pred_list)
     f1 = f1_score(y_true=true_list, y_pred=pred_list,)
     loss = np.mean(loss_list)
+    
     return bacc, auc, mcc, f1, loss, selected_nodes_list
 
-# epochs = 300
-# batch_size = 16
-# folds = 10
-# seed = 42
-
 def main(config):
-
-    # sequence = config["data"]["sequence"]
+ 
     n_views = config["data"]["n_views"]
-    dino_size= config["data"]["dino_size"]
-    fold = config["training"]["folds"]
+    dino_size = config["data"]["dino_size"]
     architecture = config["model"]["architecture"]
     pool = config["model"]["pool"]
     ratio = config["model"]["ratio"]
     dataset_name = config["data"]["dataset"]
+    hidden_size = config["model"]["hidden_size"]
+    n_folds = config["training"]["folds"]
 
-    if not os.path.exists(f"./results_{dataset_name}/"):
-        os.mkdir(f"./results_{dataset_name}/")
-
-
-    # epochs = config["training"]["epochs"]
-    # batch_size = config["training"]["batch_size"]
-    # folds = config["training"]["folds"]
-    # seed = config["training"]["seed"]
-
-    # for dataset in ["sarcoma"]:                                 # "sarcoma", "headneck"
-    #     for sequence in ["T1", "T2"]:                           # "T1", "T2"
-    #         for architecture in ["MLP"]:                        # "GCN", "SAGE", "GAT", "MLP"
-    #             for ratio in [1.00]:                            # 0.25, 0.50, 0.75, 1.00
-    #                 for pool in ["sum", "mean"]:                # "sum", "mean"
-    #                     for dino_size in ["small"]:             # "small", "base", "large", "giant"
-    #                         for n_views in [1, 3, 6, 14, 26]:   # 1, 3, 6, 14 ,26, 42
+    if not os.path.exists(f"./results/{dataset_name}_{n_folds}foldcv/"):
+        os.makedirs(f"./results/{dataset_name}_{n_folds}foldcv/")
 
     seed_everything(config["training"]["seed"])
-    # cudnn.benchmark = False
-    # torch.use_deterministic_algorithms(True)
-    # torch.backends.cudnn.deterministic = True
-
-    # data = []
-    # data.extend(torch.load(f"/home/johannes/Code/MultiViewGCN/data/deep_learning_{sequence}_train_dinov2-{dino_size}.pt", weights_only=False))
-    # data.extend(torch.load(f"/home/johannes/Code/MultiViewGCN/data/deep_learning_{sequence}_test_dinov2-{dino_size}.pt", weights_only=False))
-    # labels = np.array([graph.label for graph in data])
-    # labels = np.array([0 if item == 1 else 1 for item in labels])
-    # labels = torch.from_numpy(labels).to(torch.long)
+    cudnn.benchmark = True
     
-    if config["data"]["dataset"] == "sarcoma_t1":        
-        files = glob(f"/home/johannes/Code/MultiViewGCN/data/deep_learning/*/T1/*graph_views{n_views}_dinov2-{dino_size}.pt")
-        data = [torch.load(temp) for temp in files]
-        labels = [graph.label.item() for graph in data]
-        labels = [0 if item == 1 else 1 for item in labels]
-        labels = torch.tensor(labels).to(torch.long)
-    
-    elif config["data"]["dataset"] == "sarcoma_t2":        
-        files = glob(f"/home/johannes/Code/MultiViewGCN/data/deep_learning/*/T2/*graph_views{n_views}_dinov2-{dino_size}.pt")
-        data = [torch.load(temp) for temp in files]
-        labels = [graph.label.item() for graph in data]
-        labels = [0 if item == 1 else 1 for item in labels]
-        labels = torch.tensor(labels).to(torch.long)
-    
-    elif config["data"]["dataset"] == "headneck":
-        files = glob(f"/home/johannes/Code/MultiViewGCN/data/head_and_neck/*/converted_nii/*/*graph-new*views{n_views}_dinov2-{dino_size}.pt")        
-        data = [torch.load(temp) for temp in files]
-        labels = [graph.label.item() for graph in data]
-        labels = [0 if item == 1 else 1 for item in labels]
-        labels = torch.tensor(labels).to(torch.long)
-    
-    elif config["data"]["dataset"] == "vessel":
-        files = glob(f"/home/johannes/Code/MultiViewGCN/data/medmnist3d/vesselmnist3d_64/*graph-new*views{n_views}_dinov2-{dino_size}.pt")        
-        data = [torch.load(temp) for temp in files]
-        labels = [graph.label.item() for graph in data]
-        # labels = [0 if item == 1 else 1 for item in labels]
-        labels = torch.tensor(labels).to(torch.long)
-    
-    elif config["data"]["dataset"] == "synapse":
-        files = glob(f"/home/johannes/Code/MultiViewGCN/data/medmnist3d/synapsemnist3d_64/*graph-new*views{n_views}_dinov2-{dino_size}.pt")        
-        data = [torch.load(temp) for temp in files]
-        labels = [graph.label.item() for graph in data]
-        # labels = [0 if item == 1 else 1 for item in labels]
-        labels = torch.tensor(labels).to(torch.long)
-    
-    elif config["data"]["dataset"] == "adrenal":
-        files = glob(f"/home/johannes/Code/MultiViewGCN/data/medmnist3d/adrenalmnist3d_64/*graph-new*views{n_views}_dinov2-{dino_size}.pt")        
-        data = [torch.load(temp) for temp in files]
-        labels = [graph.label.item() for graph in data]
-        # labels = [0 if item == 1 else 1 for item in labels]
-        labels = torch.tensor(labels).to(torch.long)
+    data, labels = get_data(datset_name=dataset_name, n_views=n_views, dino_size=dino_size)
+    print(f"[INFO] Number of data samples: {len(data)}")
 
     dataset = SarcomaDatasetCV(data=data, labels=labels)
     skf = StratifiedKFold(n_splits=config["training"]["folds"], shuffle=True, random_state=config["training"]["seed"]) 
@@ -218,47 +109,29 @@ def main(config):
         val_size = len(train_val_data) - train_size
         train_data, val_data = torch.utils.data.random_split(train_val_data, [train_size, val_size], generator=torch.Generator().manual_seed(config["training"]["seed"]))
 
+        # Get class weights for CE
+        labels = np.array([graph[0].label for graph in train_data])
+        class_weights = compute_class_weight(class_weight='balanced', classes=np.unique(labels), y=labels.flatten())
+        class_weights = torch.tensor(class_weights).to(torch.float32).cuda()
+
         # Define dataloaders
         train_loader = DataLoader(train_data, batch_size=config["training"]["batch_size"], shuffle=True, drop_last=True)
         val_loader = DataLoader(val_data, batch_size=1, shuffle=False)
         test_loader = DataLoader(test_data, batch_size=1, shuffle=False)
 
-        # Initialize Model
-        match architecture:
-            # case "MLP_axial":
-            #     model = MLP(input_dim=data[0].x.shape[-1], pool=pool).cuda()        
-            # case "MLP_acs":
-            #     model = MLP(input_dim=data[0].x.shape[-1], pool=pool).cuda()        
-            case "MLP":
-                model = MLP(input_dim=data[0].x.shape[-1], hidden_dim=32, pool=pool).cuda()        
-            case "GCN":
-                # model = GCN(input_dim=data[0].x.shape[-1], pool=pool, prune=True, retention_ratio=ratio).cuda()
-                model = GNN(input_dim=data[0].x.shape[-1], hidden_dim=32, pool=pool, conv="GCN").cuda()
-            case "SAGE":
-                # model = SAGE(input_dim=data[0].x.shape[-1], pool=pool, prune=True, retention_ratio=ratio).cuda()
-                model = GNN(input_dim=data[0].x.shape[-1], hidden_dim=32, pool=pool, conv="SAGE").cuda()
-            case "GAT":
-                # model = GAT(input_dim=data[0].x.shape[-1], pool=pool, prune=True, retention_ratio=ratio).cuda()
-                model = GNN(input_dim=data[0].x.shape[-1], hidden_dim=32, pool=pool, conv="GAT").cuda()
-            case "GIN":
-                # model = GAT(input_dim=data[0].x.shape[-1], pool=pool, prune=True, retention_ratio=ratio).cuda()
-                model = GNN(input_dim=data[0].x.shape[-1], hidden_dim=32, pool=pool, conv="GIN").cuda()
-            # case "GCN_fully":
-            #     model = GCN(input_dim=data[0].x.shape[-1], pool=pool, prune=True, retention_ratio=ratio, fully_connected_graph=True).cuda()
-            # case "GCNHomConv":
-            #     model = GCNHomConv(hidden_dim=64, total_number_of_gnn_layers=2, node_feature_dim=384, 
-            #                     num_classes=2, retention_ratio=ratio).cuda()
-            
-            case _:
-                raise ValueError("Given architecture is not available.")
+        assert architecture in ["MLP", "GCN", "GAT", "SAGE", "GIN"], "Given architecture is not implemented!"
+        if architecture == "MLP":
+            model = MLP(input_dim=data[0].x.shape[-1], hidden_dim=hidden_size, pool=pool).cuda()     
+        else:
+            model = GNN(input_dim=data[0].x.shape[-1], hidden_dim=hidden_size, pool=pool, conv=architecture).cuda()        
 
         pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        print(pytorch_total_params)
+        print(f"Number of trainable parameters: {pytorch_total_params}")
 
         optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001)
         # optimizer = torch.optim.SGD(model.parameters(), lr=0.0001, momentum=0.9)
         # criterion = torch.nn.CrossEntropyLoss(weight=train_dataset.class_weights.cuda())
-        criterion = torch.nn.CrossEntropyLoss()
+        criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=1.0)  
 
         train_loss_list = []
@@ -274,17 +147,20 @@ def main(config):
         lr_list = []
         best_metric = 0
         best_epoch = 0
-        for epoch in range(1, config["training"]["epochs"]):
+        for epoch in range(1, config["training"]["epochs"]+1):
             lr = scheduler.get_last_lr()[0]
             train(train_loader, model, architecture, config["training"]["batch_size"], criterion, optimizer)
             train_bacc, train_auc, train_mcc, train_f1, train_loss, _ = eval(train_loader, "train", model, architecture, config["training"]["batch_size"], criterion)
             val_bacc, val_auc, val_mcc, val_f1, val_loss, _ = eval(val_loader, "val", model, architecture, config["training"]["batch_size"], criterion)   
             scheduler.step()
 
+            if epoch == 1:
+                torch.save(model.state_dict(), f"./results/{dataset_name}_{n_folds}foldcv/fold{fold}_best_{architecture}_views{n_views}_ratio{ratio}_pool{pool}_dino{dino_size}_model.pt") 
+
             if val_mcc > best_metric:
                 best_metric = val_mcc
                 best_epoch = epoch
-                torch.save(model.state_dict(), f"./results_{dataset_name}/fold{fold}_best_{architecture}_views{n_views}_ratio{ratio}_pool{pool}_dino{dino_size}_model.pt") 
+                torch.save(model.state_dict(), f"./results/{dataset_name}_{n_folds}foldcv/fold{fold}_best_{architecture}_views{n_views}_ratio{ratio}_pool{pool}_dino{dino_size}_model.pt") 
 
             train_loss_list.append(train_loss)
             val_loss_list.append(val_loss)    
@@ -295,7 +171,7 @@ def main(config):
             train_mcc_list.append(train_mcc)
             val_mcc_list.append(val_mcc)
             train_f1_list.append(train_f1)
-            val_f1.append(val_f1)
+            val_f1_list.append(val_f1)
             lr_list.append(lr)
 
             plt.figure(figsize=(18, 10))
@@ -339,14 +215,14 @@ def main(config):
             plt.title("Learning Rate")
             plt.grid()
 
-            plt.savefig(f"./results_{dataset_name}/fold{fold}_performance_{architecture}_views{n_views}_ratio{ratio}_pool{pool}_dino{dino_size}.png")
+            plt.savefig(f"./results/{dataset_name}_{n_folds}foldcv/fold{fold}_performance_{architecture}_views{n_views}_ratio{ratio}_pool{pool}_dino{dino_size}.png")
             plt.close()
 
             print(f'Epoch: {epoch:03d} / {config["training"]["epochs"]}, Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}, Acc: {train_bacc:.4f}, Val Acc: {val_bacc:.4f}, AUC: {train_auc:.4f}, Val AUC: {val_auc:.4f}')
 
         # Testing
         print(f"Best model obtained at epoch {best_epoch} with performance of {best_metric}.")
-        model.load_state_dict(torch.load(f"./results_{dataset_name}/fold{fold}_best_{architecture}_views{n_views}_ratio{ratio}_pool{pool}_dino{dino_size}_model.pt"))
+        model.load_state_dict(torch.load(f"./results/{dataset_name}_{n_folds}foldcv/fold{fold}_best_{architecture}_views{n_views}_ratio{ratio}_pool{pool}_dino{dino_size}_model.pt"))
         test_bacc, test_auc, test_mcc, test_f1, test_loss, selected_nodes = eval(test_loader, "test", model, architecture, config["training"]["batch_size"], criterion)
         print(f'Test Loss: {test_loss:.4f}, Test Acc: {test_bacc:.4f}, Test AUC: {test_auc:.4f}')
         cv_test_bacc_list.append(test_bacc)
@@ -354,11 +230,11 @@ def main(config):
         cv_test_mcc_list.append(test_mcc)
         cv_test_f1_list.append(test_f1)
 
-        save_path = f"./results_{dataset_name}/fold{fold}_{architecture}_views{n_views}_ratio{ratio}_pool{pool}_dino{dino_size}_selected_nodes.pt"
+        save_path = f"./results/{dataset_name}_{n_folds}foldcv/fold{fold}_{architecture}_views{n_views}_ratio{ratio}_pool{pool}_dino{dino_size}_selected_nodes.pt"
         torch.save(selected_nodes, save_path)
 
     # Write final results to file
-    with open(f"./results_{dataset_name}/results_{architecture}_views{n_views}_ratio{ratio}_pool{pool}_dino{dino_size}.txt", "w") as file:
+    with open(f"./results/{dataset_name}_{n_folds}foldcv/results_{architecture}_views{str(n_views).zfill(2)}_ratio{ratio}_pool{pool}_dino{dino_size}.txt", "w") as file:
 
         sys.stdout = file
         print(f"\nMean bacc {np.mean(cv_test_bacc_list):.4f}")
@@ -377,24 +253,32 @@ def main(config):
 
 if __name__ == "__main__":
 
-    # epochs = config["training"]["epochs"]
-    # batch_size = config["training"]["batch_size"]
-    # folds = config["training"]["folds"]
-    # seed = config["training"]["seed"]
-
-    for dataset in ["vessel"]:                          # "sarcoma_t1", "sarcoma_t2", "headneck", "vessel", "adrenal", "synapse", "nodule"
-    # for sequence in ["T1"]:                           # "T1", "T2"
+    for dataset in ["sarcoma_t1"]:                          # "sarcoma_t1", "sarcoma_t2", "headneck", "vessel", "adrenal", "synapse", "nodule"
         for architecture in ["MLP"]:                    # "GCN", "SAGE", "GAT", "MLP"
-        # for ratio in [1.00]:                          # 0.25, 0.50, 0.75, 1.00
             for pool in ["mean"]:                       # "sum", "mean"
                 for dino_size in ["small"]:             # "small", "base", "large", "giant"
                     for n_views in [1, 3, 6, 14, 26]:   # 1, 3, 6, 14 ,26, 42
 
                         config = load_config(config_path="config.yaml")
                         config["data"]["dataset"] = dataset
-                        # config["data"]["sequence"] = sequence
                         config["model"]["architecture"] = architecture
                         config["model"]["pool"] = pool
                         config["data"]["dino_size"] = dino_size
                         config["data"]["n_views"] = n_views
                         main(config)
+
+    
+    # 01: sarcoma_t1 MLP
+    # 02: sarcoma_t1 GCN
+    # 03: sarcoma_t2 MLP
+    # 04: sarcoma_t2 GCN
+    # 05: headneck MLP
+    # 06: headneck GCN
+    # 07: vessel MLP
+    # 08: vessel GCN
+    # 09: adrenal MLP
+    # 10: adrenal GCN
+    # 11: synapse MLP
+    # 12: synapse GCN
+    # 13: nodule MLP
+    # 14: nodule GCN
