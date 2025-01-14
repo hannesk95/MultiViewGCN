@@ -222,7 +222,7 @@ def create_rotation_matrices_and_graph_toplogy(n_views: int) -> List[np.ndarray]
 
     return rot_matrix_list, edge_index
 
-def show_biggest_lesion_slice(volume, mask, axis=2, cmap='gray', save_plot=False, patient_id="", pad2square=False, crop2square=True):
+def show_biggest_lesion_slice(volume, mask, axis=2, cmap='gray', save_plot=False, patient_id="", pad2square=False, crop2square=True, medmnist=False):
     """
     Display a 2D slice of the largest lesion in a 3D volume based on the segmentation mask.
     
@@ -232,63 +232,88 @@ def show_biggest_lesion_slice(volume, mask, axis=2, cmap='gray', save_plot=False
         axis (int): The axis along which to extract the slice (default is 2 for the last dimension).
         cmap (str): Colormap for visualization (default is 'gray').
     """
-    if volume.shape != mask.shape:
-        raise ValueError("Volume and mask must have the same shape.")
-    if volume.ndim != 3 or mask.ndim != 3:
-        raise ValueError("Both volume and mask must be 3D arrays.")
+
+    if not medmnist:
+
+        if volume.shape != mask.shape:
+            raise ValueError("Volume and mask must have the same shape.")
+        if volume.ndim != 3 or mask.ndim != 3:
+            raise ValueError("Both volume and mask must be 3D arrays.")
+        
+        # Label connected components in the segmentation mask
+        labeled_mask, num_features = label(mask)
+        
+        if num_features == 0:
+            raise ValueError("No lesions found in the segmentation mask.")
+        
+        # Identify the largest lesion
+        region_sizes = np.array([(labeled_mask == i).sum() for i in range(1, num_features + 1)])
+        largest_region_label = np.argmax(region_sizes) + 1
+        
+        # Compute the centroid of the largest lesion
+        centroid = center_of_mass(mask, labeled_mask, largest_region_label)
+        
+        # Extract the index of the slice along the specified axis closest to the centroid
+        slice_idx = int(round(centroid[axis]))
+        
+        # Extract the 2D slice from both the volume and the mask
+        if axis == 0:
+            slice_volume = volume[slice_idx, :, :]
+            slice_mask = mask[slice_idx, :, :]
+        elif axis == 1:
+            slice_volume = volume[:, slice_idx, :]
+            slice_mask = mask[:, slice_idx, :]
+        elif axis == 2:
+            slice_volume = volume[:, :, slice_idx]
+            slice_mask = mask[:, :, slice_idx]
+        else:
+            raise ValueError("Invalid axis. Must be 0, 1, or 2.")
+        
+        if pad2square:
+            slice_volume = pad_to_square(slice_volume, padding_value=0)
+            slice_mask = pad_to_square(slice_mask, padding_value=0)
+        
+        if crop2square:
+            slice_volume = crop_to_square(slice_volume, slice_mask)
+            slice_mask = crop_to_square(slice_mask, slice_mask)
+
+        if save_plot:
+            # Display the volume and mask slice side by side
+            fig, ax = plt.subplots(1, 2, figsize=(12, 6))
+            ax[0].imshow(slice_volume, cmap=cmap, origin='lower')
+            ax[0].set_title(f"Volume Slice (Index {slice_idx} | Shape {slice_volume.shape}) | {patient_id}")
+            ax[0].axis('off')
+            
+            ax[1].imshow(slice_mask, cmap='hot', origin='lower')
+            ax[1].set_title(f"Segmentation Mask (Largest Lesion)")
+            ax[1].axis('off')
+            
+            plt.savefig("temp.png")
+            plt.close()
+
+        return slice_volume, slice_mask
     
-    # Label connected components in the segmentation mask
-    labeled_mask, num_features = label(mask)
-    
-    if num_features == 0:
-        raise ValueError("No lesions found in the segmentation mask.")
-    
-    # Identify the largest lesion
-    region_sizes = np.array([(labeled_mask == i).sum() for i in range(1, num_features + 1)])
-    largest_region_label = np.argmax(region_sizes) + 1
-    
-    # Compute the centroid of the largest lesion
-    centroid = center_of_mass(mask, labeled_mask, largest_region_label)
-    
-    # Extract the index of the slice along the specified axis closest to the centroid
-    slice_idx = int(round(centroid[axis]))
-    
-    # Extract the 2D slice from both the volume and the mask
-    if axis == 0:
-        slice_volume = volume[slice_idx, :, :]
-        slice_mask = mask[slice_idx, :, :]
-    elif axis == 1:
-        slice_volume = volume[:, slice_idx, :]
-        slice_mask = mask[:, slice_idx, :]
-    elif axis == 2:
-        slice_volume = volume[:, :, slice_idx]
-        slice_mask = mask[:, :, slice_idx]
     else:
-        raise ValueError("Invalid axis. Must be 0, 1, or 2.")
-    
-    if pad2square:
-        slice_volume = pad_to_square(slice_volume, padding_value=0)
-        slice_mask = pad_to_square(slice_mask, padding_value=0)
-    
-    if crop2square:
-        slice_volume = crop_to_square(slice_volume, slice_mask)
-        slice_mask = crop_to_square(slice_mask, slice_mask)
+        middle_slice = volume.shape[-1]//2
+        slice_volume = volume[:, :, middle_slice]
+        slice_mask = mask[:, :, middle_slice]
 
-    if save_plot:
-        # Display the volume and mask slice side by side
-        fig, ax = plt.subplots(1, 2, figsize=(12, 6))
-        ax[0].imshow(slice_volume, cmap=cmap, origin='lower')
-        ax[0].set_title(f"Volume Slice (Index {slice_idx} | Shape {slice_volume.shape}) | {patient_id}")
-        ax[0].axis('off')
-        
-        ax[1].imshow(slice_mask, cmap='hot', origin='lower')
-        ax[1].set_title(f"Segmentation Mask (Largest Lesion)")
-        ax[1].axis('off')
-        
-        plt.savefig("temp.png")
-        plt.close()
+        if save_plot:
+            # Display the volume and mask slice side by side
+            fig, ax = plt.subplots(1, 2, figsize=(12, 6))
+            ax[0].imshow(slice_volume, cmap=cmap, origin='lower')
+            ax[0].set_title(f"Volume Slice (Index {middle_slice} | Shape {slice_volume.shape}) | {patient_id}")
+            ax[0].axis('off')
+            
+            ax[1].imshow(slice_mask, cmap='hot', origin='lower')
+            ax[1].set_title(f"Segmentation Mask (Largest Lesion)")
+            ax[1].axis('off')
+            
+            plt.savefig("temp.png")
+            plt.close()
 
-    return slice_volume, slice_mask
+        return slice_volume, slice_mask
+
 
 def pad_to_square(array, padding_value=0):
     """
@@ -375,79 +400,166 @@ def crop_to_square(array, mask):
 
 def main(args: argparse.Namespace):
 
-    print(f"[INFO] Creating Dataset with {args.n_views} views")
+    dataset_name = str(args.dataset)
+
+    print(f"[INFO] Creating {dataset_name} with {args.n_views} views")
 
     # input_list = glob(os.path.join(args.input_folder, "*.nii.gz"))
     # input_list = glob("/home/johannes/Code/MultiViewGCN/data/deep_learning/*/*/*.nii.gz") # all: t1 t2 train test
-    input_list = glob("/home/johannes/Code/MultiViewGCN/data/deep_learning/*/*/*.nii.gz") # sarcoma
-    input_list = glob("/home/johannes/Code/MultiViewGCN/data/head_and_neck/*/converted_nii/*/*.nii.gz") # head and neck
-    assert len(input_list) != 0, "No input volumes available, check path!"
-
-    img_list = sorted([item for item in input_list if not "mask" in item])
-    seg_list = sorted([item for item in input_list if "mask" in item])
-    assert len(img_list) == len(seg_list)
+    
+    if dataset_name == "sarcoma":
+        input_list = glob("/home/johannes/Code/MultiViewGCN/data/deep_learning/*/*/*.nii.gz")
+        img_list = sorted([item for item in input_list if not "label" in item])
+        seg_list = sorted([item for item in input_list if "label" in item])
+    elif dataset_name == "headneck":
+        input_list = glob("/home/johannes/Code/MultiViewGCN/data/head_and_neck/*/converted_nii/*/*.nii.gz")
+        img_list = sorted([item for item in input_list if not "mask" in item]) 
+        seg_list = sorted([item for item in input_list if "mask" in item]) 
+    elif dataset_name == "organmedmnist":
+        input_list = glob("/home/johannes/Code/MultiViewGCN/data/medmnist3d/organmnist3d_64/organ*image*.npy")
+        img_list = sorted(input_list) 
+        seg_list = img_list
+    elif dataset_name == "adrenalmedmnist":
+        input_list = glob("/home/johannes/Code/MultiViewGCN/data/medmnist3d/adrenalmnist3d_64/adrenal*image*.npy")
+        img_list = sorted(input_list) 
+        seg_list = img_list
+    elif dataset_name == "fracturemedmnist":
+        input_list = glob("/home/johannes/Code/MultiViewGCN/data/medmnist3d/fracturemnist3d_64/fracture*image*.npy")
+        img_list = sorted(input_list) 
+        seg_list = img_list
+    elif dataset_name == "nodulemedmnist":
+        input_list = glob("/home/johannes/Code/MultiViewGCN/data/medmnist3d/nodulemnist3d_64/nodule*image*.npy")
+        img_list = sorted(input_list) 
+        seg_list = img_list
+    elif dataset_name == "synapsemedmnist":
+        input_list = glob("/home/johannes/Code/MultiViewGCN/data/medmnist3d/synapsemnist3d_64/synapse*image*.npy")
+        img_list = sorted(input_list) 
+        seg_list = img_list
+    elif dataset_name == "vesselmedmnist":
+        input_list = glob("/home/johannes/Code/MultiViewGCN/data/medmnist3d/vesselmnist3d_64/vessel*image*.npy")
+        img_list = sorted(input_list) 
+        seg_list = img_list
+    else:
+        raise NotImplementedError(f"Given dataset name {dataset_name} is not implemented!")
+        
+    assert len(input_list) != 0, "No input volumes available, check path!"   
+    assert len(img_list) == len(seg_list), "Number of images and segmentation masks are not the same!"
     print(f"[INFO] Number of images and masks found: {len(img_list)}")
 
+    print("Creating rotation matrices and graph topology...")
     rot_matrices, graph_edge_index = create_rotation_matrices_and_graph_toplogy(n_views=args.n_views)
+    print("Done!")
 
     for i in tqdm(range(len(img_list)), desc="Preprocess Data: "):
 
-        patient_id = [img_list[i].split("/")[-1]]
-        # patient_id = [temp[:6] if temp.startswith("Sar") else temp[:4] for temp in patient_id][0] # sarcoma
-        patient_id = patient_id[0].split("_")[0]
 
-        # try:
+        if not "mnist" in dataset_name:
+            print(img_list[i])
+            print(seg_list[i])
 
-        # print(img_list[i])
-        # print(seg_list[i])
-    
-        # Load volume and mask as torchio subject
-        subject = tio.Subject(
-            img = tio.ScalarImage(img_list[i]),
-            seg = tio.LabelMap(seg_list[i])
-        )
+            model_name = args.dinov2_model.split("/")[-1]
+            if args.dataset == "sarcoma":
+                save_path = seg_list[i].replace("label", "graph-new").replace(".nii.gz", "") + f"_views{args.n_views}_{model_name}.pt"
+            elif args.dataset == "headneck":
+                save_path = seg_list[i].replace("mask", "graph-new").replace(".nii.gz", "") + f"_views{args.n_views}_{model_name}.pt" 
 
-        # Bring subject into RAS+ orientation
-        subject_aligned = tio.ToCanonical()(subject)
-        subject_aligned = tio.Resample("img")(subject)
+            if os.path.exists(save_path):
+                # print("Continue! File already exsits.")
+                continue
+        
+            if args.dataset == "sarcoma":
+                patient_id = [img_list[i].split("/")[-1]]
+                patient_id = [temp[:6] if temp.startswith("Sar") else temp[:4] for temp in patient_id][0]
+            
+            elif args.dataset == "headneck":
+                patient_id = [img_list[i].split("/")[-1]]
+                patient_id = patient_id[0].split("_")[0]
 
-        # Resample subject into target spacing
-        subject_resampled = tio.Resample(target=1, image_interpolation=args.interpolation)(subject_aligned)
-        # subject_resampled.img.save("img.nii.gz")
-        # subject_resampled.seg.save("seg.nii.gz")
-        # max_dim = max(subject_resampled.img.shape)
-        # target_shape = int(np.sqrt(max_dim*max_dim + max_dim*max_dim))
-        # subject_isotropic = tio.CropOrPad(target_shape=target_shape)(subject_resampled)
+            # try:
+        
+            # Load volume and mask as torchio subject
+            subject = tio.Subject(
+                img = tio.ScalarImage(img_list[i]),
+                seg = tio.LabelMap(seg_list[i])
+            )
 
-        non_zero_indices = np.array(np.nonzero(subject_resampled.seg.numpy()[0]))
-        min_coords = non_zero_indices.min(axis=1)
-        max_coords = non_zero_indices.max(axis=1)
-        dimensions = max_coords - min_coords + 1
-        max_dimension = dimensions.max()
-        target_size_with_margin = int(max_dimension*1.5)
+            # Bring subject into RAS+ orientation
+            subject_aligned = tio.ToCanonical()(subject)
+            subject_aligned = tio.Resample("img")(subject)
 
-        subject_isotropic = tio.CropOrPad(target_shape=target_size_with_margin, mask_name="seg")(subject_resampled)
-        subject_isotropic = tio.CropOrPad(target_shape=int(target_size_with_margin*1.5))(subject_isotropic)
+            # print(subject.img.shape)
 
-        # Convert subject into numpy array representations
-        img_arr = subject_isotropic.img.numpy()[0]
-        seg_arr = subject_isotropic.seg.numpy()[0]
-        # img_arr = subject_resampled.img.numpy()[0]
-        # seg_arr = subject_resampled.seg.numpy()[0]
+            # Resample subject into target spacing
+            subject_resampled = tio.Resample(target=1, image_interpolation=args.interpolation)(subject_aligned)
+            # print(subject_resampled.img.shape)
+            # subject_resampled.img.save("img.nii.gz")
+            # subject_resampled.seg.save("seg.nii.gz")
+            # max_dim = max(subject_resampled.img.shape)
+            # target_shape = int(np.sqrt(max_dim*max_dim + max_dim*max_dim))
+            # subject_isotropic = tio.CropOrPad(target_shape=target_shape)(subject_resampled)
 
-        # Bring input volume & mask into 3D Slicer representation
-        # img_arr = np.rot90(img_arr, k=1, axes=(0, 1))
-        # img_arr = np.rot90(img_arr, k=1, axes=(0, 1))
-        # img_arr = np.rot90(img_arr, k=1, axes=(0, 1))
-        # img_arr = np.fliplr(img_arr)
-        # seg_arr = np.rot90(seg_arr, k=1, axes=(0, 1))
-        # seg_arr = np.rot90(seg_arr, k=1, axes=(0, 1))
-        # seg_arr = np.rot90(seg_arr, k=1, axes=(0, 1))
-        # seg_arr = np.fliplr(seg_arr)
+            non_zero_indices = np.array(np.nonzero(subject_resampled.seg.numpy()[0]))
+            min_coords = non_zero_indices.min(axis=1)
+            max_coords = non_zero_indices.max(axis=1)
+            dimensions = max_coords - min_coords + 1
+            max_dimension = dimensions.max()
+            # print(max_dimension)
+
+            if max_dimension > 200:
+                # print("too big")
+                # print(max_dimension)
+                # print(img_list[i])
+                # continue
+                max_dimension = 200
+
+            target_size_with_margin = int(max_dimension*1.5)
+
+            subject_isotropic = tio.CropOrPad(target_shape=target_size_with_margin, mask_name="seg")(subject_resampled)
+            subject_isotropic = tio.CropOrPad(target_shape=int(target_size_with_margin*1.5))(subject_isotropic)
+
+            # Convert subject into numpy array representations
+            img_arr = subject_isotropic.img.numpy()[0]
+            # print(img_arr.shape)
+            seg_arr = subject_isotropic.seg.numpy()[0]
+            # print(seg_arr.shape)
+            # print(img_list[i])
+            # img_arr = subject_resampled.img.numpy()[0]
+            # seg_arr = subject_resampled.seg.numpy()[0]
+
+            # Bring input volume & mask into 3D Slicer representation
+            # img_arr = np.rot90(img_arr, k=1, axes=(0, 1))
+            # img_arr = np.rot90(img_arr, k=1, axes=(0, 1))
+            # img_arr = np.rot90(img_arr, k=1, axes=(0, 1))
+            # img_arr = np.fliplr(img_arr)
+            # seg_arr = np.rot90(seg_arr, k=1, axes=(0, 1))
+            # seg_arr = np.rot90(seg_arr, k=1, axes=(0, 1))
+            # seg_arr = np.rot90(seg_arr, k=1, axes=(0, 1))
+            # seg_arr = np.fliplr(seg_arr)
+        
+        else: 
+            patient_id = [img_list[i].split("/")[-1]]
+            patient_id = patient_id[0].split("_")[-1].replace(".npy", "")
+            img_arr = np.load(img_list[i])
+            seg_arr = np.load(seg_list[i])
+            # print(img_arr.shape)
+
+            subject = tio.Subject(
+                img = tio.ScalarImage(path=None, tensor=np.expand_dims(img_arr, axis=0)),
+                seg = tio.LabelMap(path=None, tensor=np.expand_dims(seg_arr, axis=0))
+            )
+
+            subject_padded = tio.CropOrPad(target_shape=int(64*1.5))(subject)
+
+            img_arr = subject_padded.img.numpy()[0]
+            seg_arr = subject_padded.seg.numpy()[0]
+            # print(img_arr.shape)
 
         img_arr_list = []
         seg_arr_list = []
         # max_dims = []
+        # print("Done1")
+        # print("Length rotation matrices")
+        # print(len(rot_matrices))
         for rot_matrix in rot_matrices:
             img_arr_rotated = rotate_array_around_center(img_arr, rot_matrix, 1)
             seg_arr_rotated = rotate_array_around_center(seg_arr, rot_matrix, 0)
@@ -459,6 +571,7 @@ def main(args: argparse.Namespace):
         
         # max_dim = np.max(max_dims)
 
+        
         img_crops = []
         seg_crops = []
         outputs_list = []
@@ -487,7 +600,11 @@ def main(args: argparse.Namespace):
             seg_crops.append(seg_crop)
 
             # img_slice, seg_slice = get_biggest_lesion_slice(volume=img_crop, mask=seg_crop)
-            img_slice, seg_slice = show_biggest_lesion_slice(volume=img_crop, mask=seg_crop, axis=2, save_plot=True, patient_id=patient_id, pad2square=False, crop2square=True)
+            if "mnist" in dataset_name:
+                img_slice, seg_slice = show_biggest_lesion_slice(volume=img_crop, mask=seg_crop, axis=2, save_plot=True, patient_id=patient_id, pad2square=False, crop2square=True, medmnist=True)
+            
+            else:
+                img_slice, seg_slice = show_biggest_lesion_slice(volume=img_crop, mask=seg_crop, axis=2, save_plot=True, patient_id=patient_id, pad2square=False, crop2square=True, medmnist=False)
             
             # time.sleep(1)                
             
@@ -507,14 +624,26 @@ def main(args: argparse.Namespace):
         # patient_id = [img_list[i].split("/")[-1]]
         # patient_id = [temp[:6] if temp.startswith("Sar") else temp[:4] for temp in patient_id][0]
         
-        df = pd.read_csv(args.label_csv)
-        # label = df[df["ID"] == patient_id].Grading.item() # sarcoma
-        label = df[df["id"] == patient_id].hpv.item() # head and neck
-        label = 0 if label == "negative" else 1
+        if not "mnist" in dataset_name:
+            df = pd.read_csv(args.label_csv)
+            if dataset_name == "sarcoma":
+                label = df[df["ID"] == patient_id].Grading.item() # sarcoma
+            else:
+                label = df[df["id"] == patient_id].hpv.item() # head and neck
+                label = 0 if label == "negative" else 1
+        else:
+            label = np.load(img_list[i].replace("image", "label")).item()
 
         data = Data(x=features, edge_index=edge_index, label=torch.tensor(label))
         model_name = args.dinov2_model.split("/")[-1]
-        save_path = seg_list[i].replace("label", "graph-new").replace(".nii.gz", "") + f"_views{args.n_views}_{model_name}.pt"
+
+        if dataset_name == "sarcoma":
+            save_path = seg_list[i].replace("label", "graph-new").replace(".nii.gz", "") + f"_views{args.n_views}_{model_name}.pt" # sarcoma
+        elif dataset_name == "headneck":
+            save_path = seg_list[i].replace("mask", "graph-new").replace(".nii.gz", "") + f"_views{args.n_views}_{model_name}.pt" # head and neck
+        elif "mnist" in dataset_name:
+            save_path = img_list[i].replace("image", "graph-new").replace(".npy", "") + f"_views{args.n_views}_{model_name}.pt" # head and neck
+        
         torch.save(data, save_path)
         
         # except KeyboardInterrupt:
@@ -529,12 +658,14 @@ if __name__ == "__main__":
 
     # start_time = time.time()
 
-    data_path = "/home/johannes/Code/MultiViewGCN/data/deep_learning/train/T1"
-    # label_path = "/home/johannes/Code/MultiViewGCN/data/patient_metadata.csv" # sarcoma
-    label_path = "/home/johannes/Code/MultiViewGCN/data/head_and_neck/patient_metadata.csv" # head and neck
+    dataset = "nodulemedmnist"
+    # data_path = "/home/johannes/Code/MultiViewGCN/data/deep_learning/train/T1"
+    label_path = "/home/johannes/Code/MultiViewGCN/data/patient_metadata.csv" # sarcoma
+    # label_path = "/home/johannes/Code/MultiViewGCN/data/head_and_neck/patient_metadata.csv" # head and neck
     
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input_folder", default=data_path, help="Path to folder where volumes and corresponding masks are present.", type=Path)
+    parser.add_argument("--dataset", default=dataset, choices=["sarcoma", "headneck"], help="Name of dataset to be processed.", type=Path)
+    # parser.add_argument("--input_folder", default=data_path, help="Path to folder where volumes and corresponding masks are present.", type=Path)
     parser.add_argument("--n_views", default=3, choices=[1, 3, 6, 14, 26, 42], help="Number of view points to slice input volume.", type=int)
     parser.add_argument("--target_spacing", default=1, help="Target voxel spacing of input data.", type=int)
     parser.add_argument("--interpolation", default="linear", choices=["linear", "bspline"], help="Interpolation type used for resampling.", type=str)
@@ -544,9 +675,14 @@ if __name__ == "__main__":
     parser.add_argument("--label_csv", default=label_path, help="Path to csv file which contains labels.", type=Path)
     args = parser.parse_args()
 
-    for views in [1]:
+    for views in [1, 3, 6, 14, 26]:
         args.n_views = views
         main(args)
 
     # end_time = time.time()
-    # print(f"Execution Time: {end_time - start_time:.2f} seconds")           
+    # print(f"Execution Time: {end_time - start_time:.2f} seconds")    
+    # 
+    # 8: synapse
+    # 9: adrenal
+    # 10: nodule
+    # 11: vessel       
