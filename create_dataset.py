@@ -466,20 +466,20 @@ def main(args: argparse.Namespace):
     print(f"\n[INFO] Creating {args.dataset} dataset with {args.n_views} views using {args.dinov2_model} model")
     
     if str(args.dataset) == "sarcoma_t1":
-        input_list = glob("/home/johannes/Code/MultiViewGCN/data/deep_learning/*/T1/*.nii.gz")
+        input_list = glob("/home/johannes/Code/MultiViewGCN/data/sarcoma/*/T1/*.nii.gz")
         img_list = sorted([item for item in input_list if not "label" in item])
         seg_list = sorted([item for item in input_list if "label" in item])
-        args.label_csv = "/home/johannes/Code/MultiViewGCN/data/patient_metadata.csv"
+        args.label_csv = "/home/johannes/Code/MultiViewGCN/data/sarcoma/patient_metadata.csv"
     elif str(args.dataset) == "sarcoma_t2":
-        input_list = glob("/home/johannes/Code/MultiViewGCN/data/deep_learning/*/T2/*.nii.gz")
+        input_list = glob("/home/johannes/Code/MultiViewGCN/data/sarcoma/*/T2/*.nii.gz")
         img_list = sorted([item for item in input_list if not "label" in item])
         seg_list = sorted([item for item in input_list if "label" in item])
-        args.label_csv = "/home/johannes/Code/MultiViewGCN/data/patient_metadata.csv"
+        args.label_csv = "/home/johannes/Code/MultiViewGCN/data/sarcoma/patient_metadata.csv"
     elif str(args.dataset) == "headneck":
-        input_list = glob("/home/johannes/Code/MultiViewGCN/data/head_and_neck/*/converted_nii/*/*.nii.gz")
+        input_list = glob("/home/johannes/Code/MultiViewGCN/data/headneck/*/converted_nii/*/*.nii.gz")
         img_list = sorted([item for item in input_list if not "mask" in item]) 
         seg_list = sorted([item for item in input_list if "mask" in item]) 
-        args.label_csv = "/home/johannes/Code/MultiViewGCN/data/head_and_neck/patient_metadata.csv"
+        args.label_csv = "/home/johannes/Code/MultiViewGCN/data/headneck/patient_metadata.csv"
     elif str(args.dataset) == "adrenal":
         input_list = glob("/home/johannes/Code/MultiViewGCN/data/medmnist3d/adrenalmnist3d_64/adrenal*image*.npy")
         img_list = sorted(input_list) 
