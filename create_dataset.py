@@ -1,6 +1,3 @@
-import os
-import time
-import sys
 import torch
 import argparse
 from pathlib import Path
@@ -18,7 +15,8 @@ from torch_geometric.data import Data
 from torch_geometric.utils import to_undirected
 import pandas as pd
 import matplotlib.pyplot as plt
-import multiprocessing
+import pyvista as pv
+import trimesh
 
 def rescale_image(img: np.ndarray) -> np.ndarray:
     img = img - (np.min(img))
@@ -276,44 +274,27 @@ def show_biggest_lesion_slice(volume, mask, axis=2, cmap='gray', save_plot=False
         if crop2square:
             slice_volume = crop_to_square(slice_volume, slice_mask)
             slice_mask = crop_to_square(slice_mask, slice_mask)
-
-        if save_plot:
-            # Display the volume and mask slice side by side
-            fig, ax = plt.subplots(1, 2, figsize=(12, 6))
-            ax[0].imshow(slice_volume, cmap=cmap, origin='lower')
-            ax[0].set_title(f"Volume Slice (Index {slice_idx} | Shape {slice_volume.shape}) | {patient_id}")
-            ax[0].axis('off')
-            
-            ax[1].imshow(slice_mask, cmap='hot', origin='lower')
-            ax[1].set_title(f"Segmentation Mask (Largest Lesion)")
-            ax[1].axis('off')
-            
-            plt.savefig("temp.png")
-            plt.close()
-
-        return slice_volume, slice_mask
     
     else:
         middle_slice = volume.shape[-1]//2
         slice_volume = volume[:, :, middle_slice]
         slice_mask = mask[:, :, middle_slice]
 
-        if save_plot:
-            # Display the volume and mask slice side by side
-            fig, ax = plt.subplots(1, 2, figsize=(12, 6))
-            ax[0].imshow(slice_volume, cmap=cmap, origin='lower')
-            ax[0].set_title(f"Volume Slice (Index {middle_slice} | Shape {slice_volume.shape}) | {patient_id}")
-            ax[0].axis('off')
-            
-            ax[1].imshow(slice_mask, cmap='hot', origin='lower')
-            ax[1].set_title(f"Segmentation Mask (Largest Lesion)")
-            ax[1].axis('off')
-            
-            plt.savefig("temp.png")
-            plt.close()
+    if save_plot:
+        # Display the volume and mask slice side by side
+        fig, ax = plt.subplots(1, 2, figsize=(12, 6))
+        ax[0].imshow(slice_volume, cmap=cmap, origin='lower')
+        ax[0].set_title(f"Volume Slice | Shape {slice_volume.shape} | Patient {patient_id}")
+        ax[0].axis('off')
+        
+        ax[1].imshow(slice_mask, cmap='hot', origin='lower')
+        ax[1].set_title(f"Segmentation Mask (Largest Lesion)")
+        ax[1].axis('off')
+        
+        plt.savefig("temp.png")
+        plt.close()
 
-        return slice_volume, slice_mask
-
+    return slice_volume, slice_mask
 
 def pad_to_square(array, padding_value=0):
     """
@@ -368,6 +349,7 @@ def crop_to_square(array, mask):
 
     # Determine the size of the square
     square_size = max(height, width)
+    square_size = int(square_size * 1.1)
 
     # Center the square around the bounding box
     center_row = (row_min + row_max) // 2
@@ -397,292 +379,249 @@ def crop_to_square(array, mask):
 
     return cropped_array
 
+def create_fibonacci_sphere(n_vertices: int, save_sphere: bool = False):
+
+    indices = np.arange(0, n_vertices, dtype=float) + 0.5
+    phi = np.arccos(1 - 2 * indices / n_vertices)
+    theta = np.pi * (1 + 5**0.5) * indices
+
+    x = np.sin(phi) * np.cos(theta)
+    y = np.sin(phi) * np.sin(theta)
+    z = np.cos(phi)
+
+    points = np.vstack((x, y, z)).T
+
+    point_cloud = pv.PolyData(points)
+    mesh = point_cloud.delaunay_3d()
+    surf = mesh.extract_surface()
+    vertices = surf.points
+    faces = surf.faces.reshape(-1, 4)[:, 1:]
+
+    if save_sphere:
+        mesh = trimesh.Trimesh(vertices=vertices, faces=faces) 
+        mesh.export("mesh.ply")
+
+
+    return vertices, faces
+
+def create_rotation_matrices(vertices: np.ndarray):
+    
+    origin = np.array(vertices[0])
+
+    rot_matrices = []
+    for i in range(1, len(vertices)):
+        rot_matrices.append(calculate_rotation_matrix(origin, np.array(vertices[i])))
+    
+    return rot_matrices
+
+def create_graph_topology(vertices: np.ndarray, faces: np.ndarray):   
+        
+    # Convert faces to dense adjacency matrix
+    num_vertices = vertices.shape[0]
+    adjacency_matrix = np.zeros((num_vertices, num_vertices), dtype=np.float32)
+
+    for face in faces:
+        i, j, k = face
+        # Add edges between vertices of each triangle
+        adjacency_matrix[i, j] = 1  # Edge between i and j
+        adjacency_matrix[j, i] = 1  # Symmetric edge
+        adjacency_matrix[j, k] = 1  # Edge between j and k
+        adjacency_matrix[k, j] = 1  # Symmetric edge
+        adjacency_matrix[k, i] = 1  # Edge between k and i
+        adjacency_matrix[i, k] = 1  # Symmetric edge
+
+    # Convert faces to edges (COO format) 
+    faces_tensor = torch.from_numpy(np.copy(faces))           
+    edge_index = torch.cat([faces_tensor[:, [0, 1]],
+                            faces_tensor[:, [1, 2]],
+                            faces_tensor[:, [2, 0]]], dim=0).t().contiguous()    
+    edge_index = to_undirected(edge_index=edge_index)
+
+    return adjacency_matrix, edge_index
+
+def encode_largest_lesion_slice(volume: np.array, mask: np.array, image_processor, backbone, patient_id, dataset_name):
+
+    if dataset_name in ["sarcoma_t1", "sarcoma_t2", "headneck"]:
+        img_slice, seg_slice = show_biggest_lesion_slice(volume=volume, mask=mask, axis=2, save_plot=True, patient_id=patient_id, pad2square=False, crop2square=True, medmnist=False)
+    
+    else:
+        img_slice, seg_slice = show_biggest_lesion_slice(volume=volume, mask=mask, axis=2, save_plot=True, patient_id=patient_id, pad2square=False, crop2square=True, medmnist=True)
+    
+    img_slice = np.expand_dims(img_slice, axis=-1)
+    img_slice = np.repeat(img_slice, 3, axis=-1)
+    img_slice = rescale_image(img=img_slice)
+    img_slice_pil = Image.fromarray(img_slice)
+    inputs = image_processor(images=img_slice_pil, return_tensors="pt")
+    inputs = inputs.pixel_values.to(args.device)
+    outputs = backbone(inputs)
+    outputs = backbone.layernorm(outputs.pooler_output).detach().cpu()
+    
+    return outputs
 
 def main(args: argparse.Namespace):
 
     dataset_name = str(args.dataset)
+    model_name = args.dinov2_model.split("/")[-1]
 
-    print(f"[INFO] Creating {dataset_name} with {args.n_views} views")
-
-    # input_list = glob(os.path.join(args.input_folder, "*.nii.gz"))
-    # input_list = glob("/home/johannes/Code/MultiViewGCN/data/deep_learning/*/*/*.nii.gz") # all: t1 t2 train test
+    print(f"\n[INFO] Creating {args.dataset} dataset with {args.n_views} views using {args.dinov2_model} model")
     
-    if dataset_name == "sarcoma":
-        input_list = glob("/home/johannes/Code/MultiViewGCN/data/deep_learning/*/*/*.nii.gz")
+    if str(args.dataset) == "sarcoma_t1":
+        input_list = glob("/home/johannes/Code/MultiViewGCN/data/deep_learning/*/T1/*.nii.gz")
         img_list = sorted([item for item in input_list if not "label" in item])
         seg_list = sorted([item for item in input_list if "label" in item])
-    elif dataset_name == "headneck":
+        args.label_csv = "/home/johannes/Code/MultiViewGCN/data/patient_metadata.csv"
+    elif str(args.dataset) == "sarcoma_t2":
+        input_list = glob("/home/johannes/Code/MultiViewGCN/data/deep_learning/*/T2/*.nii.gz")
+        img_list = sorted([item for item in input_list if not "label" in item])
+        seg_list = sorted([item for item in input_list if "label" in item])
+        args.label_csv = "/home/johannes/Code/MultiViewGCN/data/patient_metadata.csv"
+    elif str(args.dataset) == "headneck":
         input_list = glob("/home/johannes/Code/MultiViewGCN/data/head_and_neck/*/converted_nii/*/*.nii.gz")
         img_list = sorted([item for item in input_list if not "mask" in item]) 
         seg_list = sorted([item for item in input_list if "mask" in item]) 
-    elif dataset_name == "organmedmnist":
-        input_list = glob("/home/johannes/Code/MultiViewGCN/data/medmnist3d/organmnist3d_64/organ*image*.npy")
-        img_list = sorted(input_list) 
-        seg_list = img_list
-    elif dataset_name == "adrenalmedmnist":
+        args.label_csv = "/home/johannes/Code/MultiViewGCN/data/head_and_neck/patient_metadata.csv"
+    elif str(args.dataset) == "adrenal":
         input_list = glob("/home/johannes/Code/MultiViewGCN/data/medmnist3d/adrenalmnist3d_64/adrenal*image*.npy")
         img_list = sorted(input_list) 
         seg_list = img_list
-    elif dataset_name == "fracturemedmnist":
-        input_list = glob("/home/johannes/Code/MultiViewGCN/data/medmnist3d/fracturemnist3d_64/fracture*image*.npy")
-        img_list = sorted(input_list) 
-        seg_list = img_list
-    elif dataset_name == "nodulemedmnist":
+    elif str(args.dataset) == "nodule":
         input_list = glob("/home/johannes/Code/MultiViewGCN/data/medmnist3d/nodulemnist3d_64/nodule*image*.npy")
         img_list = sorted(input_list) 
         seg_list = img_list
-    elif dataset_name == "synapsemedmnist":
+    elif str(args.dataset) == "synapse":
         input_list = glob("/home/johannes/Code/MultiViewGCN/data/medmnist3d/synapsemnist3d_64/synapse*image*.npy")
         img_list = sorted(input_list) 
         seg_list = img_list
-    elif dataset_name == "vesselmedmnist":
+    elif str(args.dataset) == "vessel":
         input_list = glob("/home/johannes/Code/MultiViewGCN/data/medmnist3d/vesselmnist3d_64/vessel*image*.npy")
         img_list = sorted(input_list) 
         seg_list = img_list
     else:
-        raise NotImplementedError(f"Given dataset name {dataset_name} is not implemented!")
+        raise NotImplementedError(f"Given dataset name {args.dataset} is not implemented!")
         
     assert len(input_list) != 0, "No input volumes available, check path!"   
     assert len(img_list) == len(seg_list), "Number of images and segmentation masks are not the same!"
     print(f"[INFO] Number of images and masks found: {len(img_list)}")
 
-    print("Creating rotation matrices and graph topology...")
-    rot_matrices, graph_edge_index = create_rotation_matrices_and_graph_toplogy(n_views=args.n_views)
-    print("Done!")
+    vertices, faces = create_fibonacci_sphere(n_vertices=args.n_views, save_sphere=False)
+    rot_matrices = create_rotation_matrices(vertices=vertices)
+    adjacency_matrix, graph_edge_index = create_graph_topology(vertices=vertices, faces=faces)
+
+    processor = AutoImageProcessor.from_pretrained(args.dinov2_model)
+    model = AutoModel.from_pretrained(args.dinov2_model).to(args.device)
+
 
     for i in tqdm(range(len(img_list)), desc="Preprocess Data: "):
 
-
-        if not "mnist" in dataset_name:
-            print(img_list[i])
-            print(seg_list[i])
-
-            model_name = args.dinov2_model.split("/")[-1]
-            if args.dataset == "sarcoma":
-                save_path = seg_list[i].replace("label", "graph-new").replace(".nii.gz", "") + f"_views{args.n_views}_{model_name}.pt"
-            elif args.dataset == "headneck":
-                save_path = seg_list[i].replace("mask", "graph-new").replace(".nii.gz", "") + f"_views{args.n_views}_{model_name}.pt" 
-
-            if os.path.exists(save_path):
-                # print("Continue! File already exsits.")
-                continue
-        
-            if args.dataset == "sarcoma":
+        if str(args.dataset) in ["sarcoma_t1", "sarcoma_t2", "headneck"]:
+            
+            if str(args.dataset) == "sarcoma_t1":
+                save_path = seg_list[i].replace("label", "graph-fibonacci").replace(".nii.gz", "") + f"_views{args.n_views}_{model_name}.pt"
                 patient_id = [img_list[i].split("/")[-1]]
                 patient_id = [temp[:6] if temp.startswith("Sar") else temp[:4] for temp in patient_id][0]
-            
-            elif args.dataset == "headneck":
+            elif str(args.dataset) == "sarcoma_t2":
+                save_path = seg_list[i].replace("label", "graph-fibonacci").replace(".nii.gz", "") + f"_views{args.n_views}_{model_name}.pt"
                 patient_id = [img_list[i].split("/")[-1]]
-                patient_id = patient_id[0].split("_")[0]
-
-            # try:
+                patient_id = [temp[:6] if temp.startswith("Sar") else temp[:4] for temp in patient_id][0]
+            elif str(args.dataset) == "headneck":
+                save_path = seg_list[i].replace("mask", "graph-fibonacci").replace(".nii.gz", "") + f"_views{args.n_views}_{model_name}.pt" 
+                patient_id = [img_list[i].split("/")[-1]]
+                patient_id = patient_id[0].split("_")[0]        
         
-            # Load volume and mask as torchio subject
             subject = tio.Subject(
                 img = tio.ScalarImage(img_list[i]),
                 seg = tio.LabelMap(seg_list[i])
             )
-
-            # Bring subject into RAS+ orientation
+  
             subject_aligned = tio.ToCanonical()(subject)
-            subject_aligned = tio.Resample("img")(subject)
+            subject_resampled = tio.Resample("img")(subject_aligned)
+            subject_iso_resampled = tio.Resample(target=args.target_spacing, image_interpolation=args.interpolation)(subject_resampled)
 
-            # print(subject.img.shape)
-
-            # Resample subject into target spacing
-            subject_resampled = tio.Resample(target=1, image_interpolation=args.interpolation)(subject_aligned)
-            # print(subject_resampled.img.shape)
-            # subject_resampled.img.save("img.nii.gz")
-            # subject_resampled.seg.save("seg.nii.gz")
-            # max_dim = max(subject_resampled.img.shape)
-            # target_shape = int(np.sqrt(max_dim*max_dim + max_dim*max_dim))
-            # subject_isotropic = tio.CropOrPad(target_shape=target_shape)(subject_resampled)
-
-            non_zero_indices = np.array(np.nonzero(subject_resampled.seg.numpy()[0]))
+            non_zero_indices = np.array(np.nonzero(subject_iso_resampled.seg.numpy()[0]))
             min_coords = non_zero_indices.min(axis=1)
             max_coords = non_zero_indices.max(axis=1)
             dimensions = max_coords - min_coords + 1
-            max_dimension = dimensions.max()
-            # print(max_dimension)
+            max_dimension = dimensions.max()          
 
-            if max_dimension > 200:
-                # print("too big")
-                # print(max_dimension)
-                # print(img_list[i])
-                # continue
-                max_dimension = 200
+            if max_dimension > 300:
+                print(f"\n [INFO] Very big ROI ({max_dimension}): {seg_list[i]}")                
 
-            target_size_with_margin = int(max_dimension*1.5)
+            target_size_iso_crop = int(max_dimension*1.5)
+            target_size_iso_pad = int(target_size_iso_crop*1.5)
 
-            subject_isotropic = tio.CropOrPad(target_shape=target_size_with_margin, mask_name="seg")(subject_resampled)
-            subject_isotropic = tio.CropOrPad(target_shape=int(target_size_with_margin*1.5))(subject_isotropic)
-
-            # Convert subject into numpy array representations
-            img_arr = subject_isotropic.img.numpy()[0]
-            # print(img_arr.shape)
-            seg_arr = subject_isotropic.seg.numpy()[0]
-            # print(seg_arr.shape)
-            # print(img_list[i])
-            # img_arr = subject_resampled.img.numpy()[0]
-            # seg_arr = subject_resampled.seg.numpy()[0]
-
-            # Bring input volume & mask into 3D Slicer representation
-            # img_arr = np.rot90(img_arr, k=1, axes=(0, 1))
-            # img_arr = np.rot90(img_arr, k=1, axes=(0, 1))
-            # img_arr = np.rot90(img_arr, k=1, axes=(0, 1))
-            # img_arr = np.fliplr(img_arr)
-            # seg_arr = np.rot90(seg_arr, k=1, axes=(0, 1))
-            # seg_arr = np.rot90(seg_arr, k=1, axes=(0, 1))
-            # seg_arr = np.rot90(seg_arr, k=1, axes=(0, 1))
-            # seg_arr = np.fliplr(seg_arr)
+            subject_iso_crop = tio.CropOrPad(target_shape=target_size_iso_crop, mask_name="seg")(subject_iso_resampled)
+            subject_iso_pad = tio.CropOrPad(target_shape=target_size_iso_pad)(subject_iso_crop)
+       
+            img_arr = subject_iso_pad.img.numpy()[0]  
+            seg_arr = subject_iso_pad.seg.numpy()[0]
         
         else: 
             patient_id = [img_list[i].split("/")[-1]]
             patient_id = patient_id[0].split("_")[-1].replace(".npy", "")
             img_arr = np.load(img_list[i])
             seg_arr = np.load(seg_list[i])
-            # print(img_arr.shape)
 
             subject = tio.Subject(
                 img = tio.ScalarImage(path=None, tensor=np.expand_dims(img_arr, axis=0)),
                 seg = tio.LabelMap(path=None, tensor=np.expand_dims(seg_arr, axis=0))
             )
 
-            subject_padded = tio.CropOrPad(target_shape=int(64*1.5))(subject)
+            subject_iso_pad = tio.CropOrPad(target_shape=int(64*1.5))(subject)
 
-            img_arr = subject_padded.img.numpy()[0]
-            seg_arr = subject_padded.seg.numpy()[0]
-            # print(img_arr.shape)
+            img_arr = subject_iso_pad.img.numpy()[0]
+            seg_arr = subject_iso_pad.seg.numpy()[0]
+    
 
-        img_arr_list = []
-        seg_arr_list = []
-        # max_dims = []
-        # print("Done1")
-        # print("Length rotation matrices")
-        # print(len(rot_matrices))
+        
+        outputs_list = []
+        encoding = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
+                                               image_processor=processor, backbone=model, 
+                                               patient_id=patient_id, dataset_name=dataset_name)
+        outputs_list.append(encoding)
         for rot_matrix in rot_matrices:
             img_arr_rotated = rotate_array_around_center(img_arr, rot_matrix, 1)
-            seg_arr_rotated = rotate_array_around_center(seg_arr, rot_matrix, 0)
-            # max_dim = get_max_dim_mask(seg_arr_rotated)
-
-            img_arr_list.append(img_arr_rotated)
-            seg_arr_list.append(seg_arr_rotated)
-            # max_dims.append(max_dim)        
-        
-        # max_dim = np.max(max_dims)
-
-        
-        img_crops = []
-        seg_crops = []
-        outputs_list = []
-
-        processor = AutoImageProcessor.from_pretrained(args.dinov2_model)
-        model = AutoModel.from_pretrained(args.dinov2_model).to(args.device)
-
-        for j in range(len(img_arr_list)):
-
-            subject_new = tio.Subject(
-                img = tio.ScalarImage(path=None, tensor=np.expand_dims(img_arr_list[j], axis=0)),
-                seg = tio.LabelMap(path=None, tensor=np.expand_dims(seg_arr_list[j], axis=0))
-            )
-
-            # cropped images
-            # subject_cropped = tio.CropOrPad(target_shape=max_dim, mask_name="seg")(subject_new)
-            # subject_cropped = tio.CropOrPad(mask_name="seg")(subject_new)
-            # img_crop = subject_cropped.img.numpy()[0]
-            # seg_crop = subject_cropped.seg.numpy()[0]
+            seg_arr_rotated = rotate_array_around_center(seg_arr, rot_matrix, 0)  
             
-            # full images
-            img_crop = subject_new.img.numpy()[0]
-            seg_crop = subject_new.seg.numpy()[0]
-
-            img_crops.append(img_crop)
-            seg_crops.append(seg_crop)
-
-            # img_slice, seg_slice = get_biggest_lesion_slice(volume=img_crop, mask=seg_crop)
-            if "mnist" in dataset_name:
-                img_slice, seg_slice = show_biggest_lesion_slice(volume=img_crop, mask=seg_crop, axis=2, save_plot=True, patient_id=patient_id, pad2square=False, crop2square=True, medmnist=True)
+            encoding = encode_largest_lesion_slice(volume=img_arr_rotated, mask=seg_arr_rotated, 
+                                                   image_processor=processor, backbone=model, 
+                                                   patient_id=patient_id, dataset_name=dataset_name)
             
-            else:
-                img_slice, seg_slice = show_biggest_lesion_slice(volume=img_crop, mask=seg_crop, axis=2, save_plot=True, patient_id=patient_id, pad2square=False, crop2square=True, medmnist=False)
-            
-            # time.sleep(1)                
-            
-            img_slice = np.expand_dims(img_slice, axis=-1)
-            img_slice = np.repeat(img_slice, 3, axis=-1)
-            img_slice = rescale_image(img=img_slice)
-            img_slice_pil = Image.fromarray(img_slice)
-            inputs = processor(images=img_slice_pil, return_tensors="pt")
-            inputs = inputs.pixel_values.to(args.device)
-            outputs = model(inputs)
-            outputs = model.layernorm(outputs.pooler_output).detach().cpu()
-            outputs_list.append(outputs)
+            outputs_list.append(encoding)      
 
         features = torch.concatenate(outputs_list, dim=0)        
         edge_index = to_undirected(graph_edge_index)
         
-        # patient_id = [img_list[i].split("/")[-1]]
-        # patient_id = [temp[:6] if temp.startswith("Sar") else temp[:4] for temp in patient_id][0]
-        
-        if not "mnist" in dataset_name:
+        if dataset_name in ["sarcoma_t1", "sarcoma_t2", "headneck"]:
             df = pd.read_csv(args.label_csv)
-            if dataset_name == "sarcoma":
-                label = df[df["ID"] == patient_id].Grading.item() # sarcoma
+            if dataset_name == "sarcoma_t1":
+                label = df[df["ID"] == patient_id].Grading.item() 
+            elif dataset_name == "sarcoma_t2":
+                label = df[df["ID"] == patient_id].Grading.item() 
             else:
-                label = df[df["id"] == patient_id].hpv.item() # head and neck
+                label = df[df["id"] == patient_id].hpv.item() 
                 label = 0 if label == "negative" else 1
         else:
             label = np.load(img_list[i].replace("image", "label")).item()
 
-        data = Data(x=features, edge_index=edge_index, label=torch.tensor(label))
-        model_name = args.dinov2_model.split("/")[-1]
-
-        if dataset_name == "sarcoma":
-            save_path = seg_list[i].replace("label", "graph-new").replace(".nii.gz", "") + f"_views{args.n_views}_{model_name}.pt" # sarcoma
-        elif dataset_name == "headneck":
-            save_path = seg_list[i].replace("mask", "graph-new").replace(".nii.gz", "") + f"_views{args.n_views}_{model_name}.pt" # head and neck
-        elif "mnist" in dataset_name:
-            save_path = img_list[i].replace("image", "graph-new").replace(".npy", "") + f"_views{args.n_views}_{model_name}.pt" # head and neck
-        
+        data = Data(x=features, edge_index=edge_index, adj_matrix = adjacency_matrix, label=torch.tensor(label))        
         torch.save(data, save_path)
-        
-        # except KeyboardInterrupt:
-        #     sys.exit()
+     
+if __name__ == "__main__":    
 
-        # except Exception as e:
-        #     print(f"Failed file: {img_list[i]}")
-        #     print(f"An error occurred: {e}")
+    for dataset in ["sarcoma_t1"]:
+        for views in [8, 12, 16, 20]:
+            
+            parser = argparse.ArgumentParser()
+            parser.add_argument("--dataset", default="sarcoma_t1", help="Name of dataset to be processed.", type=Path,
+                                choices=["sarcoma_t1", "sarcoma_t2", "headneck", "nodule", "adrenal", "synapse", "vessel"], )
+            parser.add_argument("--n_views", default=3, choices=[1, 3, 6, 14, 26, 42], help="Number of view points to slice input volume.", type=int)
+            parser.add_argument("--target_spacing", default=1, help="Target voxel spacing of input data.", type=int)
+            parser.add_argument("--interpolation", default="linear", choices=["linear", "bspline"], help="Interpolation type used for resampling.", type=str)
+            parser.add_argument("--dinov2_model", default='facebook/dinov2-small', help="Pretrained DINOv2 model architecture.", type=str,
+                                choices=['facebook/dinov2-small', 'facebook/dinov2-base', 'facebook/dinov2-large', 'facebook/dinov2-giant'])
+            parser.add_argument("--device", default="cuda", choices=["cuda", "cpu"], help="Processing device.", type=str)
+            args = parser.parse_args()
 
-
-if __name__ == "__main__":
-
-    # start_time = time.time()
-
-    dataset = "nodulemedmnist"
-    # data_path = "/home/johannes/Code/MultiViewGCN/data/deep_learning/train/T1"
-    label_path = "/home/johannes/Code/MultiViewGCN/data/patient_metadata.csv" # sarcoma
-    # label_path = "/home/johannes/Code/MultiViewGCN/data/head_and_neck/patient_metadata.csv" # head and neck
-    
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", default=dataset, choices=["sarcoma", "headneck"], help="Name of dataset to be processed.", type=Path)
-    # parser.add_argument("--input_folder", default=data_path, help="Path to folder where volumes and corresponding masks are present.", type=Path)
-    parser.add_argument("--n_views", default=3, choices=[1, 3, 6, 14, 26, 42], help="Number of view points to slice input volume.", type=int)
-    parser.add_argument("--target_spacing", default=1, help="Target voxel spacing of input data.", type=int)
-    parser.add_argument("--interpolation", default="linear", choices=["linear", "bspline"], help="Interpolation type used for resampling.", type=str)
-    parser.add_argument("--dinov2_model", default='facebook/dinov2-small', help="Pretrained DINOv2 model architecture.", type=str,
-                        choices=['facebook/dinov2-small', 'facebook/dinov2-base', 'facebook/dinov2-large', 'facebook/dinov2-giant'])
-    parser.add_argument("--device", default="cuda", choices=["cuda", "cpu"], help="Processing device.", type=str)
-    parser.add_argument("--label_csv", default=label_path, help="Path to csv file which contains labels.", type=Path)
-    args = parser.parse_args()
-
-    for views in [1, 3, 6, 14, 26]:
-        args.n_views = views
-        main(args)
-
-    # end_time = time.time()
-    # print(f"Execution Time: {end_time - start_time:.2f} seconds")    
-    # 
-    # 8: synapse
-    # 9: adrenal
-    # 10: nodule
-    # 11: vessel       
+            args.dataset = dataset
+            args.n_views = views
+            main(args)  
