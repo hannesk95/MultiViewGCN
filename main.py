@@ -293,11 +293,12 @@ def main(config):
 
 if __name__ == "__main__":
 
-    for dataset in ["nodule"]:                          # "sarcoma_t1", "sarcoma_t2", "headneck", "vessel", "adrenal", "synapse", "nodule"
+    for dataset in ["nodule"]:                      # "sarcoma_t1", "sarcoma_t2", "headneck", "vessel", "adrenal", "synapse", "nodule"
         for architecture in ["GCN"]:                    # "GCN", "SAGE", "GAT", "MLP"
-            for pool in ["mean"]:                       # "sum", "mean"
+            # for pool in ["mean"]:                       # "sum", "mean"
+            for pool in ["mean", "sum", "max"]:                       # "sum", "mean"
                 for dino_size in ["small"]:             # "small", "base", "large", "giant"
-                    for n_views in [1, 3, 6, 14 ,26]:   # 1, 3, 6, 14 ,26, 42
+                    for n_views in [1, 3, 8, 12, 16, 20, 24]:   # 1, 3, 6, 14 ,26, 42
 
                         config = load_config(config_path="config.yaml")
                         config["data"]["dataset"] = dataset

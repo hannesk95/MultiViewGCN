@@ -114,7 +114,7 @@ class SarcomaDatasetCV(Dataset):
 def get_data(datset_name: str, n_views: int, dino_size: str):
 
     if datset_name == "sarcoma_t1":        
-        files = glob(f"/home/johannes/Code/MultiViewGCN/data/deep_learning/*/T1/*graph_views{n_views}_dinov2-{dino_size}.pt")
+        files = glob(f"/home/johannes/Code/MultiViewGCN/data/sarcoma/*/T1/*graph-fibonacci_views{n_views}_dinov2-{dino_size}.pt")
         data = [torch.load(temp) for temp in files]
         labels = [graph.label.item() for graph in data]
         labels = [0 if item == 1 else 1 for item in labels]
@@ -125,7 +125,7 @@ def get_data(datset_name: str, n_views: int, dino_size: str):
         labels = torch.tensor(labels).to(torch.long)
     
     elif datset_name == "sarcoma_t2":        
-        files = glob(f"/home/johannes/Code/MultiViewGCN/data/deep_learning/*/T2/*graph_views{n_views}_dinov2-{dino_size}.pt")
+        files = glob(f"/home/johannes/Code/MultiViewGCN/data/sarcoma/*/T2/*graph-fibonacci_views{n_views}_dinov2-{dino_size}.pt")
         data = [torch.load(temp) for temp in files]
         labels = [graph.label.item() for graph in data]
         labels = [0 if item == 1 else 1 for item in labels]
@@ -136,35 +136,35 @@ def get_data(datset_name: str, n_views: int, dino_size: str):
         labels = torch.tensor(labels).to(torch.long)
     
     elif datset_name == "headneck":
-        files = glob(f"/home/johannes/Code/MultiViewGCN/data/head_and_neck/*/converted_nii/*/*graph-new*views{n_views}_dinov2-{dino_size}.pt")        
+        files = glob(f"/home/johannes/Code/MultiViewGCN/data/headneck/*/converted_nii/*/*graph-fibonacci*views{n_views}_dinov2-{dino_size}.pt")        
         data = [torch.load(temp) for temp in files]
         labels = [graph.label.item() for graph in data]
         labels = [0 if item == 1 else 1 for item in labels]
         labels = torch.tensor(labels).to(torch.long)
     
     elif datset_name == "vessel":
-        files = glob(f"/home/johannes/Code/MultiViewGCN/data/medmnist3d/vesselmnist3d_64/*graph-new*views{n_views}_dinov2-{dino_size}.pt")        
+        files = glob(f"/home/johannes/Code/MultiViewGCN/data/medmnist3d/vesselmnist3d_64/*graph-fibonacci*views{n_views}_dinov2-{dino_size}.pt")        
         data = [torch.load(temp) for temp in files]
         labels = [graph.label.item() for graph in data]
         # labels = [0 if item == 1 else 1 for item in labels]
         labels = torch.tensor(labels).to(torch.long)
     
     elif datset_name == "synapse":
-        files = glob(f"/home/johannes/Code/MultiViewGCN/data/medmnist3d/synapsemnist3d_64/*graph-new*views{n_views}_dinov2-{dino_size}.pt")        
+        files = glob(f"/home/johannes/Code/MultiViewGCN/data/medmnist3d/synapsemnist3d_64/*graph-fibonacci*views{n_views}_dinov2-{dino_size}.pt")        
         data = [torch.load(temp) for temp in files]
         labels = [graph.label.item() for graph in data]
         # labels = [0 if item == 1 else 1 for item in labels]
         labels = torch.tensor(labels).to(torch.long)
     
     elif datset_name == "adrenal":
-        files = glob(f"/home/johannes/Code/MultiViewGCN/data/medmnist3d/adrenalmnist3d_64/*graph-new*views{n_views}_dinov2-{dino_size}.pt")        
+        files = glob(f"/home/johannes/Code/MultiViewGCN/data/medmnist3d/adrenalmnist3d_64/*graph-fibonacci*views{n_views}_dinov2-{dino_size}.pt")        
         data = [torch.load(temp) for temp in files]
         labels = [graph.label.item() for graph in data]
         # labels = [0 if item == 1 else 1 for item in labels]
         labels = torch.tensor(labels).to(torch.long)
 
     elif datset_name == "nodule":
-        files = glob(f"/home/johannes/Code/MultiViewGCN/data/medmnist3d/nodulemnist3d_64/*graph-new*views{n_views}_dinov2-{dino_size}.pt")        
+        files = glob(f"/home/johannes/Code/MultiViewGCN/data/medmnist3d/nodulemnist3d_64/*graph-fibonacci*views{n_views}_dinov2-{dino_size}.pt")        
         data = [torch.load(temp) for temp in files]
         labels = [graph.label.item() for graph in data]
         # labels = [0 if item == 1 else 1 for item in labels]

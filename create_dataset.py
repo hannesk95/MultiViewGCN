@@ -381,61 +381,103 @@ def crop_to_square(array, mask):
 
 def create_fibonacci_sphere(n_vertices: int, save_sphere: bool = False):
 
-    indices = np.arange(0, n_vertices, dtype=float) + 0.5
-    phi = np.arccos(1 - 2 * indices / n_vertices)
-    theta = np.pi * (1 + 5**0.5) * indices
+    if n_vertices == 1:
+        vertices = np.random.randn(1, 3)
+        faces = []
 
-    x = np.sin(phi) * np.cos(theta)
-    y = np.sin(phi) * np.sin(theta)
-    z = np.cos(phi)
+    elif n_vertices == 3:
+        vertices = np.random.randn(3, 3)
+        faces = []
 
-    points = np.vstack((x, y, z)).T
+    else:    
+        assert n_vertices >= 8, "Please make sure number of views is greater than 8 or equal to 1 or 3!"
+        indices = np.arange(0, n_vertices, dtype=float) + 0.5
+        phi = np.arccos(1 - 2 * indices / n_vertices)
+        theta = np.pi * (1 + 5**0.5) * indices
 
-    point_cloud = pv.PolyData(points)
-    mesh = point_cloud.delaunay_3d()
-    surf = mesh.extract_surface()
-    vertices = surf.points
-    faces = surf.faces.reshape(-1, 4)[:, 1:]
+        x = np.sin(phi) * np.cos(theta)
+        y = np.sin(phi) * np.sin(theta)
+        z = np.cos(phi)
 
-    if save_sphere:
-        mesh = trimesh.Trimesh(vertices=vertices, faces=faces) 
-        mesh.export("mesh.ply")
+        points = np.vstack((x, y, z)).T
+
+        point_cloud = pv.PolyData(points)
+        mesh = point_cloud.delaunay_3d()
+        surf = mesh.extract_surface()
+        vertices = surf.points
+        faces = surf.faces.reshape(-1, 4)[:, 1:]
+
+        if save_sphere:
+            mesh = trimesh.Trimesh(vertices=vertices, faces=faces) 
+            mesh.export("mesh.ply")
 
 
     return vertices, faces
 
 def create_rotation_matrices(vertices: np.ndarray):
-    
-    origin = np.array(vertices[0])
 
     rot_matrices = []
-    for i in range(1, len(vertices)):
-        rot_matrices.append(calculate_rotation_matrix(origin, np.array(vertices[i])))
+    if vertices.shape[0] == 1:
+        pass
     
+    elif vertices.shape[0] == 3:
+        rot_matrices.append(np.array([[ 0.,  0., -1.],
+                                      [ 0.,  1.,  0.],
+                                      [ 1.,  0.,  0.]]))
+        
+        rot_matrices.append(np.array([[ 1.,  0.,  0.],
+                                      [ 0.,  0., -1.],
+                                      [ 0.,  1.,  0.]]))        
+                                    
+    else:
+        assert vertices.shape[0] >= 8, "Please make sure number of views is greater than 8 or equal to 1 or 3!"
+    
+        origin = np.array(vertices[0])
+
+        
+        for i in range(1, len(vertices)):
+            rot_matrices.append(calculate_rotation_matrix(origin, np.array(vertices[i])))
+        
     return rot_matrices
 
-def create_graph_topology(vertices: np.ndarray, faces: np.ndarray):   
+def create_graph_topology(vertices: np.ndarray, faces: np.ndarray):
+
+    if vertices.shape[0] == 1:
+        adjacency_matrix = np.ones(1)
+        edge_index = torch.tensor([[0], 
+                                   [0]])
+        edge_index = to_undirected(edge_index=edge_index)
+
+    elif vertices.shape[0] == 3:
+        adjacency_matrix = np.ones((3, 3))
+        np.fill_diagonal(adjacency_matrix, 0)
+        edge_index = torch.tensor([[0, 0, 1, 1, 2, 2], 
+                                   [1, 2, 0, 2, 0, 1]])
+        edge_index = to_undirected(edge_index=edge_index)
+
+    else:    
+        assert vertices.shape[0] >= 8, "Please make sure number of views is greater than 8 or equal to 1 or 3!"   
         
-    # Convert faces to dense adjacency matrix
-    num_vertices = vertices.shape[0]
-    adjacency_matrix = np.zeros((num_vertices, num_vertices), dtype=np.float32)
+        # Convert faces to dense adjacency matrix
+        num_vertices = vertices.shape[0]
+        adjacency_matrix = np.zeros((num_vertices, num_vertices), dtype=np.float32)
 
-    for face in faces:
-        i, j, k = face
-        # Add edges between vertices of each triangle
-        adjacency_matrix[i, j] = 1  # Edge between i and j
-        adjacency_matrix[j, i] = 1  # Symmetric edge
-        adjacency_matrix[j, k] = 1  # Edge between j and k
-        adjacency_matrix[k, j] = 1  # Symmetric edge
-        adjacency_matrix[k, i] = 1  # Edge between k and i
-        adjacency_matrix[i, k] = 1  # Symmetric edge
+        for face in faces:
+            i, j, k = face
+            # Add edges between vertices of each triangle
+            adjacency_matrix[i, j] = 1  # Edge between i and j
+            adjacency_matrix[j, i] = 1  # Symmetric edge
+            adjacency_matrix[j, k] = 1  # Edge between j and k
+            adjacency_matrix[k, j] = 1  # Symmetric edge
+            adjacency_matrix[k, i] = 1  # Edge between k and i
+            adjacency_matrix[i, k] = 1  # Symmetric edge
 
-    # Convert faces to edges (COO format) 
-    faces_tensor = torch.from_numpy(np.copy(faces))           
-    edge_index = torch.cat([faces_tensor[:, [0, 1]],
-                            faces_tensor[:, [1, 2]],
-                            faces_tensor[:, [2, 0]]], dim=0).t().contiguous()    
-    edge_index = to_undirected(edge_index=edge_index)
+        # Convert faces to edges (COO format) 
+        faces_tensor = torch.from_numpy(np.copy(faces))           
+        edge_index = torch.cat([faces_tensor[:, [0, 1]],
+                                faces_tensor[:, [1, 2]],
+                                faces_tensor[:, [2, 0]]], dim=0).t().contiguous()    
+        edge_index = to_undirected(edge_index=edge_index)
 
     return adjacency_matrix, edge_index
 
@@ -510,7 +552,6 @@ def main(args: argparse.Namespace):
     processor = AutoImageProcessor.from_pretrained(args.dinov2_model)
     model = AutoModel.from_pretrained(args.dinov2_model).to(args.device)
 
-
     for i in tqdm(range(len(img_list)), desc="Preprocess Data: "):
 
         if str(args.dataset) in ["sarcoma_t1", "sarcoma_t2", "headneck"]:
@@ -551,11 +592,9 @@ def main(args: argparse.Namespace):
 
             subject_iso_crop = tio.CropOrPad(target_shape=target_size_iso_crop, mask_name="seg")(subject_iso_resampled)
             subject_iso_pad = tio.CropOrPad(target_shape=target_size_iso_pad)(subject_iso_crop)
-       
-            img_arr = subject_iso_pad.img.numpy()[0]  
-            seg_arr = subject_iso_pad.seg.numpy()[0]
         
         else: 
+            save_path = img_list[i].replace("image", "graph-fibonacci").replace(".npy", "") + f"_views{args.n_views}_{model_name}.pt" 
             patient_id = [img_list[i].split("/")[-1]]
             patient_id = patient_id[0].split("_")[-1].replace(".npy", "")
             img_arr = np.load(img_list[i])
@@ -568,11 +607,9 @@ def main(args: argparse.Namespace):
 
             subject_iso_pad = tio.CropOrPad(target_shape=int(64*1.5))(subject)
 
-            img_arr = subject_iso_pad.img.numpy()[0]
-            seg_arr = subject_iso_pad.seg.numpy()[0]
-    
+        img_arr = subject_iso_pad.img.numpy()[0]
+        seg_arr = subject_iso_pad.seg.numpy()[0]
 
-        
         outputs_list = []
         encoding = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
                                                image_processor=processor, backbone=model, 
@@ -595,21 +632,23 @@ def main(args: argparse.Namespace):
             df = pd.read_csv(args.label_csv)
             if dataset_name == "sarcoma_t1":
                 label = df[df["ID"] == patient_id].Grading.item() 
+                label = 0 if label == 1 else 1
             elif dataset_name == "sarcoma_t2":
                 label = df[df["ID"] == patient_id].Grading.item() 
+                label = 0 if label == 1 else 1
             else:
                 label = df[df["id"] == patient_id].hpv.item() 
                 label = 0 if label == "negative" else 1
         else:
             label = np.load(img_list[i].replace("image", "label")).item()
 
-        data = Data(x=features, edge_index=edge_index, adj_matrix = adjacency_matrix, label=torch.tensor(label))        
+        data = Data(x=features, edge_index=edge_index, adj_matrix=adjacency_matrix, label=torch.tensor(label))        
         torch.save(data, save_path)
      
 if __name__ == "__main__":    
 
-    for dataset in ["sarcoma_t1"]:
-        for views in [8, 12, 16, 20]:
+    for dataset in ["sarcoma_t2"]:
+        for views in [24]:
             
             parser = argparse.ArgumentParser()
             parser.add_argument("--dataset", default="sarcoma_t1", help="Name of dataset to be processed.", type=Path,
