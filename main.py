@@ -5,15 +5,14 @@ import numpy as np
 from torch_geometric.loader import DataLoader
 from dataset import SarcomaDatasetCV, get_data
 from sklearn.metrics import balanced_accuracy_score, roc_auc_score, matthews_corrcoef, f1_score
-from model import PyGModel
-# from model import MLP, GNN, 
+from model import PyGModel, ViewGNN, GNN, MLP
+# from viewgcn_model import ViewGCN
 import matplotlib.pyplot as plt
 import torch
 from torch.utils.data import Subset
 from sklearn.model_selection import StratifiedKFold
 import numpy as np
 from torch.backends import cudnn
-from _delete.model_paper import GCNHomConv
 from glob import glob
 from utils import load_config, seed_everything, save_confusion_matrix
 from sklearn.utils.class_weight import compute_class_weight
@@ -25,14 +24,12 @@ def train(loader, model, architecture, batch_size, criterion, optimizer, n_views
         inputs = data[0].cuda()        
         labels = data[1].cuda()  
 
-        # if architecture == "MLP":
-        #     out = model(inputs.x, batch_size) 
-        # else:
-        #     out, _ = model(inputs.x.to(torch.float32), inputs.edge_index.to(torch.long), inputs.batch)            
-         
-        out = model(x=inputs.x.to(torch.float32), edge_index=inputs.edge_index.to(torch.long), batch=inputs.batch, batch_size=batch_size, n_views=n_views)  
+        if architecture == "MLP":
+            out = model(inputs.x, batch_size) 
+        else:
+            out = model(inputs.x.to(torch.float32), inputs.edge_index.to(torch.long), inputs.batch)       
         
-        loss = criterion(out, labels)  
+        loss = criterion(out, labels)
         loss.backward()  
         optimizer.step()  
         optimizer.zero_grad() 
@@ -49,19 +46,15 @@ def eval(loader, split, model, architecture, batch_size, criterion, n_views, res
         inputs = data[0].cuda()        
         labels = data[1].cuda() 
 
-        # if architecture == "MLP":
-        #     if split == "train":
-        #             out = model(inputs.x.to(torch.float32), batch_size)
-        #     else:
-        #             out = model(inputs.x.to(torch.float32), 1)
-        # else:
-        #     out, selected_nodes = model(inputs.x.to(torch.float32), inputs.edge_index.to(torch.long), inputs.batch)
-        #     selected_nodes_list.extend(selected_nodes.detach().cpu().numpy().tolist()) 
-         
-        out = model(x=inputs.x.to(torch.float32), edge_index=inputs.edge_index.to(torch.long), batch=inputs.batch, batch_size=batch_size, n_views=n_views) 
-        selected_nodes_list.extend(torch.ones(10))      
-        
-        loss = criterion(out, labels)        
+        if architecture == "MLP":
+            if split == "train":
+                    out = model(inputs.x.to(torch.float32), batch_size)
+            else:
+                    out = model(inputs.x.to(torch.float32), 1)
+        else:
+            out = model(inputs.x.to(torch.float32), inputs.edge_index.to(torch.long), inputs.batch)         
+               
+        loss = criterion(out, labels)                
         pred = out.argmax(dim=1)
         
         loss_list.append(loss.item())
@@ -77,6 +70,7 @@ def eval(loader, split, model, architecture, batch_size, criterion, n_views, res
 
     save_confusion_matrix(y_true=true_list, y_pred=pred_list, result_dir=result_dir, split=split)
     
+    selected_nodes_list.extend(torch.ones(10))
     return bacc, auc, mcc, f1, loss, selected_nodes_list
 
 def main(config):
@@ -84,7 +78,7 @@ def main(config):
     n_views = config["data"]["n_views"]
     dino_size = config["data"]["dino_size"]
     architecture = config["model"]["architecture"]
-    pool = config["model"]["pool"]
+    readout = config["model"]["readout"]
     ratio = config["model"]["ratio"]
     dataset_name = config["data"]["dataset"]
     hidden_size = config["model"]["hidden_size"]
@@ -134,22 +128,23 @@ def main(config):
         test_loader = DataLoader(test_data, batch_size=1, shuffle=False, drop_last=False)
 
         assert architecture in ["MLP", "GCN", "GAT", "SAGE", "GIN"], "Given architecture is not implemented!"
-        # if architecture == "MLP":
-        #     model = MLP(input_dim=data[0].x.shape[-1], hidden_dim=hidden_size, pool=pool).cuda()     
-        # else:
-        #     model = GNN(input_dim=data[0].x.shape[-1], hidden_dim=hidden_size, pool=pool, conv=architecture).cuda()       
-
-        model = PyGModel(input_dim=data[0].x.shape[-1], hidden_dim=hidden_size, pool=pool, architecture=architecture).cuda()
+        if architecture == "MLP":
+            model = MLP(input_dim=data[0].x.shape[-1], hidden_dim=hidden_size, readout=readout).cuda()     
+        else:
+            model = GNN(input_dim=data[0].x.shape[-1], hidden_dim=hidden_size, readout=readout, ratio=ratio).cuda()
+            # model = PyGModel(input_dim=data[0].x.shape[-1], hidden_dim=hidden_size, pool=pool, architecture=architecture).cuda() # PyGModel 
+            # model = ViewGCN(name="ViewGCN", nclasses=2, num_views=24, hidden=128).cuda() # ViewGCN
+            # model = ViewGNN(input_dim=data[0].x.shape[-1], hidden_dim=hidden_size, pool=pool, conv=architecture).cuda()   
 
         pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"Number of trainable parameters: {pytorch_total_params}")
 
         optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001)
         # optimizer = torch.optim.SGD(model.parameters(), lr=0.001)
-        # criterion = torch.nn.CrossEntropyLoss(weight=train_dataset.class_weights.cuda())
+        
         criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=1.0)  
-
+        
+        # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=1.0)  
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 
                                                                mode='max',           # Minimize the monitored metric (e.g., validation loss)
                                                                factor=0.9,           # Reduce LR by a factor of 0.1
@@ -169,7 +164,7 @@ def main(config):
         train_f1_list = []
         val_f1_list = []
         lr_list = []
-        best_metric = 0
+        best_metric = -1
         best_epoch = 0
 
         warmup_epochs = 100
@@ -190,17 +185,17 @@ def main(config):
                     param_group['lr'] = lr
             else:
                 # Step the ReduceLROnPlateau scheduler after the warm-up phase
-                scheduler.step(val_mcc)
+                scheduler.step(val_auc)
                 lr = optimizer.param_groups[0]['lr']
       
 
             if epoch == 1:
-                torch.save(model.state_dict(), f"./results/{dataset_name}_{n_folds}foldcv/fold{fold}_best_{architecture}_views{n_views}_ratio{ratio}_pool{pool}_dino{dino_size}_model.pt") 
+                torch.save(model.state_dict(), f"./results/{dataset_name}_{n_folds}foldcv/fold{fold}_best_{architecture}_views{n_views}_ratio{ratio}_readout{readout}_dino{dino_size}_model.pt") 
 
-            if val_mcc > best_metric:
-                best_metric = val_mcc
+            if val_auc > best_metric:
+                best_metric = val_auc
                 best_epoch = epoch
-                torch.save(model.state_dict(), f"./results/{dataset_name}_{n_folds}foldcv/fold{fold}_best_{architecture}_views{n_views}_ratio{ratio}_pool{pool}_dino{dino_size}_model.pt") 
+                torch.save(model.state_dict(), f"./results/{dataset_name}_{n_folds}foldcv/fold{fold}_best_{architecture}_views{n_views}_ratio{ratio}_readout{readout}_dino{dino_size}_model.pt") 
 
             train_loss_list.append(train_loss)
             val_loss_list.append(val_loss)    
@@ -255,14 +250,14 @@ def main(config):
             plt.title("Learning Rate")
             plt.grid()
 
-            plt.savefig(f"./results/{dataset_name}_{n_folds}foldcv/fold{fold}_performance_{architecture}_views{n_views}_ratio{ratio}_pool{pool}_dino{dino_size}.png")
+            plt.savefig(f"./results/{dataset_name}_{n_folds}foldcv/fold{fold}_performance_{architecture}_views{n_views}_ratio{ratio}_readout{readout}_dino{dino_size}.png")
             plt.close()
 
             print(f'Epoch: {epoch:03d} / {config["training"]["epochs"]}, Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}, Acc: {train_bacc:.4f}, Val Acc: {val_bacc:.4f}, AUC: {train_auc:.4f}, Val AUC: {val_auc:.4f}')
 
         # Testing
         print(f"Best model obtained at epoch {best_epoch} with performance of {best_metric}.")
-        model.load_state_dict(torch.load(f"./results/{dataset_name}_{n_folds}foldcv/fold{fold}_best_{architecture}_views{n_views}_ratio{ratio}_pool{pool}_dino{dino_size}_model.pt"))
+        model.load_state_dict(torch.load(f"./results/{dataset_name}_{n_folds}foldcv/fold{fold}_best_{architecture}_views{n_views}_ratio{ratio}_readout{readout}_dino{dino_size}_model.pt"))
         test_bacc, test_auc, test_mcc, test_f1, test_loss, selected_nodes = eval(test_loader, "test", model, architecture, config["training"]["batch_size"], criterion, n_views, result_dir)
         print(f'Test Loss: {test_loss:.4f}, Test Acc: {test_bacc:.4f}, Test AUC: {test_auc:.4f}')
         cv_test_bacc_list.append(test_bacc)
@@ -270,11 +265,11 @@ def main(config):
         cv_test_mcc_list.append(test_mcc)
         cv_test_f1_list.append(test_f1)
 
-        save_path = f"./results/{dataset_name}_{n_folds}foldcv/fold{fold}_{architecture}_views{n_views}_ratio{ratio}_pool{pool}_dino{dino_size}_selected_nodes.pt"
+        save_path = f"./results/{dataset_name}_{n_folds}foldcv/fold{fold}_{architecture}_views{n_views}_ratio{ratio}_readout{readout}_dino{dino_size}_selected_nodes.pt"
         torch.save(selected_nodes, save_path)
 
     # Write final results to file
-    with open(f"./results/{dataset_name}_{n_folds}foldcv/results_{architecture}_views{str(n_views).zfill(2)}_ratio{ratio}_pool{pool}_dino{dino_size}.txt", "w") as file:
+    with open(f"./results/{dataset_name}_{n_folds}foldcv/results_{architecture}_views{str(n_views).zfill(2)}_ratio{ratio}_readout{readout}_dino{dino_size}.txt", "w") as file:
 
         sys.stdout = file
         print(f"\nMean bacc {np.mean(cv_test_bacc_list):.4f}")
@@ -293,20 +288,22 @@ def main(config):
 
 if __name__ == "__main__":
 
-    for dataset in ["nodule"]:                      # "sarcoma_t1", "sarcoma_t2", "headneck", "vessel", "adrenal", "synapse", "nodule"
-        for architecture in ["GCN"]:                    # "GCN", "SAGE", "GAT", "MLP"
-            # for pool in ["mean"]:                       # "sum", "mean"
-            for pool in ["mean", "sum", "max"]:                       # "sum", "mean"
-                for dino_size in ["small"]:             # "small", "base", "large", "giant"
-                    for n_views in [1, 3, 8, 12, 16, 20, 24]:   # 1, 3, 6, 14 ,26, 42
+    for dataset in ["nodule"]:                              # "sarcoma_t1", "sarcoma_t2", "headneck", "vessel", "adrenal", "synapse", "nodule"
+        for architecture in ["GCN"]:                            # "GCN", "SAGE", "GAT", "MLP"
+            for ratio in [0.25, 0.5, 0.75, 1.0]:                # 0.25, 0.5, 0.75, 1.0
+                for readout in ["mean"]:                        # "sum", "mean"
+                    for dino_size in ["small"]:                 # "small", "base", "large", "giant"
+                        for n_views in [8, 12, 16, 20, 24]:     # 1, 3, 8, 12, 16, 20, 24
 
-                        config = load_config(config_path="config.yaml")
-                        config["data"]["dataset"] = dataset
-                        config["model"]["architecture"] = architecture
-                        config["model"]["pool"] = pool
-                        config["data"]["dino_size"] = dino_size
-                        config["data"]["n_views"] = n_views
-                        main(config)
+                            config = load_config(config_path="config.yaml")
+                            config["data"]["dataset"] = dataset
+                            config["model"]["architecture"] = architecture
+                            config["model"]["readout"] = readout
+                            config["model"]["ratio"] = ratio
+                            config["data"]["dino_size"] = dino_size
+                            config["data"]["n_views"] = n_views
+
+                            main(config)
 
     
     # 00: sarcoma_t1 MLP
