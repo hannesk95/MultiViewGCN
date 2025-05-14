@@ -5,7 +5,7 @@ import numpy as np
 from torch_geometric.loader import DataLoader
 from dataset import SarcomaDatasetCV, get_data
 from sklearn.metrics import balanced_accuracy_score, roc_auc_score, matthews_corrcoef, f1_score
-from model import PyGModel, ViewGNN, GNN, MLP
+from model import PyGModel, ViewGNN, GNN, MLP, GINE
 # from viewgcn_model import ViewGCN
 import matplotlib.pyplot as plt
 import torch
@@ -27,7 +27,8 @@ def train(loader, model, architecture, batch_size, criterion, optimizer, n_views
         if architecture == "MLP":
             out = model(inputs.x, batch_size) 
         else:
-            out = model(inputs.x.to(torch.float32), inputs.edge_index.to(torch.long), inputs.batch)       
+            # out = model(inputs.x.to(torch.float32), inputs.edge_index.to(torch.long), inputs.batch)       
+            out = model(inputs.x.to(torch.float32), inputs.edge_index.to(torch.long), inputs.batch, inputs.edge_attr.to(torch.float32))       
         
         loss = criterion(out, labels)
         loss.backward()  
@@ -52,7 +53,8 @@ def eval(loader, split, model, architecture, batch_size, criterion, n_views, res
             else:
                     out = model(inputs.x.to(torch.float32), 1)
         else:
-            out = model(inputs.x.to(torch.float32), inputs.edge_index.to(torch.long), inputs.batch)         
+            # out = model(inputs.x.to(torch.float32), inputs.edge_index.to(torch.long), inputs.batch) 
+            out = model(inputs.x.to(torch.float32), inputs.edge_index.to(torch.long), inputs.batch, inputs.edge_attr.to(torch.float32))         
                
         loss = criterion(out, labels)                
         pred = out.argmax(dim=1)
@@ -131,7 +133,9 @@ def main(config):
         if architecture == "MLP":
             model = MLP(input_dim=data[0].x.shape[-1], hidden_dim=hidden_size, readout=readout).cuda()     
         else:
-            model = GNN(input_dim=data[0].x.shape[-1], hidden_dim=hidden_size, readout=readout, ratio=ratio).cuda()
+            # model = GNN(input_dim=data[0].x.shape[-1], hidden_dim=hidden_size, readout=readout, ratio=ratio).cuda()
+            model = GINE(in_channels=data[0].x.shape[-1], hidden_channels=16, out_channels=2, num_layers=3, readout=readout).cuda()
+            # model = torch.compile(model, dynamic=True)
             # model = PyGModel(input_dim=data[0].x.shape[-1], hidden_dim=hidden_size, pool=pool, architecture=architecture).cuda() # PyGModel 
             # model = ViewGCN(name="ViewGCN", nclasses=2, num_views=24, hidden=128).cuda() # ViewGCN
             # model = ViewGNN(input_dim=data[0].x.shape[-1], hidden_dim=hidden_size, pool=pool, conv=architecture).cuda()   
@@ -288,12 +292,12 @@ def main(config):
 
 if __name__ == "__main__":
 
-    for dataset in ["nodule"]:                              # "sarcoma_t1", "sarcoma_t2", "headneck", "vessel", "adrenal", "synapse", "nodule"
+    for dataset in ["sarcoma_t1"]:                                  # "sarcoma_t1", "sarcoma_t2", "headneck", "vessel", "adrenal", "synapse", "nodule"
         for architecture in ["GCN"]:                            # "GCN", "SAGE", "GAT", "MLP"
-            for ratio in [0.25, 0.5, 0.75, 1.0]:                # 0.25, 0.5, 0.75, 1.0
-                for readout in ["mean"]:                        # "sum", "mean"
+            for ratio in [0.25]:                # 0.25, 0.5, 0.75, 1.0
+                for readout in ["mean", "sum"]:                        # "sum", "mean"
                     for dino_size in ["small"]:                 # "small", "base", "large", "giant"
-                        for n_views in [8, 12, 16, 20, 24]:     # 1, 3, 8, 12, 16, 20, 24
+                        for n_views in [8, 12, 16]:     # 1, 3, 8, 12, 16, 20, 24
 
                             config = load_config(config_path="config.yaml")
                             config["data"]["dataset"] = dataset

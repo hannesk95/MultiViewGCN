@@ -17,6 +17,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import pyvista as pv
 import trimesh
+import torch.nn.functional as F
+import os
+
 
 def rescale_image(img: np.ndarray) -> np.ndarray:
     img = img - (np.min(img))
@@ -140,6 +143,138 @@ def rotate_array_around_center(array, rotation_matrix, order):
     )
 
     return rotated_array
+
+def rotate_3d_tensor_around_center(tensor, rotation_matrix, order=1, device='cuda'):
+    """
+    Rotate a 3D torch tensor around its center using a given rotation matrix.
+
+    Parameters:
+    - tensor: 3D torch tensor to rotate.
+    - rotation_matrix: 3x3 torch tensor representing the rotation matrix.
+    - order: Interpolation order (0: nearest, 1: linear).  Defaults to 1.
+
+    Returns:
+    - rotated_tensor: 3D torch tensor after rotation.
+    """
+    # Validate inputs
+    if tensor.ndim != 3:
+        raise ValueError("Input tensor must be 3D.")
+    if rotation_matrix.shape != (3, 3):
+        raise ValueError("Rotation matrix must be 3x3.")
+    if order not in [0, 1]:
+        raise ValueError("Order must be 0 (nearest) or 1 (linear).")
+
+    # Compute the center of the tensor
+    center = torch.tensor(tensor.shape, dtype=torch.float32) / 2.0
+
+    # Create the affine transformation matrix
+    affine_matrix = torch.eye(4)
+    affine_matrix[:3, :3] = rotation_matrix
+
+    # Translate to origin, apply rotation, and translate back
+    translation_to_origin = torch.eye(4)
+    translation_to_origin[:3, 3] = -center
+
+    translation_back = torch.eye(4)
+    translation_back[:3, 3] = center
+
+    # Combine transformations: T_back * R * T_origin
+    combined_transform = translation_back @ affine_matrix @ translation_to_origin
+
+    # Create a meshgrid of coordinates for the original volume
+    d_coords = torch.arange(tensor.shape[0], dtype=torch.float32)
+    h_coords = torch.arange(tensor.shape[1], dtype=torch.float32)
+    w_coords = torch.arange(tensor.shape[2], dtype=torch.float32)
+    grid = torch.meshgrid(d_coords, h_coords, w_coords, indexing='ij')
+    coords = torch.stack(grid, dim=-1)  # Shape: (D, H, W, 3)
+
+    # Reshape to (D*H*W, 3) for matrix multiplication
+    original_coords_flat = coords.reshape(-1, 3)
+
+    # Add a homogeneous coordinate (1) to each point
+    ones = torch.ones(original_coords_flat.shape[0], 1)
+    original_coords_homogeneous = torch.cat((original_coords_flat, ones), dim=1)  # (D*H*W, 4)
+
+    # Apply the inverse transformation to get source coordinates
+    # We use the inverse because grid_sample samples *from* the input
+    # at locations given by the output (transformed) coordinates.
+    transformed_coords_homogeneous = original_coords_homogeneous @ torch.inverse(combined_transform).T
+
+    # Extract the spatial coordinates (x, y, z)
+    transformed_coords = transformed_coords_homogeneous[:, :3]
+
+    # Normalize to the range [-1, 1] for grid_sample
+    normalized_coords_d = 2 * transformed_coords[:, 0] / (tensor.shape[0] - 1) - 1
+    normalized_coords_h = 2 * transformed_coords[:, 1] / (tensor.shape[1] - 1) - 1
+    normalized_coords_w = 2 * transformed_coords[:, 2] / (tensor.shape[2] - 1) - 1
+
+    # Create the sampling grid for grid_sample
+    sampling_grid = torch.stack((normalized_coords_w, normalized_coords_h, normalized_coords_d), dim=-1)
+    sampling_grid = sampling_grid.reshape(1, tensor.shape[0], tensor.shape[1], tensor.shape[2], 3)
+
+    # Use grid_sample to perform the rotation
+    mode = 'bilinear' if order == 1 else 'nearest'
+    rotated_tensor = F.grid_sample(
+        tensor.unsqueeze(0).unsqueeze(0),  # Add batch dimension for grid_sample
+        sampling_grid.to(device),
+        mode=mode,
+        padding_mode='zeros',
+        align_corners=True
+    ).squeeze(0) # Remove batch dimension
+
+    return rotated_tensor.squeeze(0).cpu().numpy()  # Remove channel dimension
+
+# def rotate_3d_tensor(volume, rotation_matrix, mode='bilinear'):
+#     """
+#     Rotate a 3D volume around its center using a 3x3 rotation matrix.
+    
+#     Args:
+#         volume (torch.Tensor): 3D tensor of shape (D, H, W), must be float32 and on GPU.
+#         rotation_matrix (torch.Tensor): 3x3 rotation matrix, must be float32 and on GPU.
+        
+#     Returns:
+#         torch.Tensor: Rotated volume of the same shape.
+#     """
+
+#     if not isinstance(volume, torch.Tensor):
+#         volume = torch.tensor(volume, dtype=torch.float32).cuda()
+
+#     if not isinstance(rotation_matrix, torch.Tensor):
+#         rotation_matrix = torch.tensor(rotation_matrix, dtype=torch.float32).cuda()
+
+#     device = volume.device
+#     D, H, W = volume.shape
+#     volume = volume.unsqueeze(0).unsqueeze(0)  # Shape: [1, 1, D, H, W]
+    
+#     # Compute center of the volume
+#     center = torch.tensor([D/2, H/2, W/2], device=device)
+
+#     # Build the full 3x4 affine matrix with translation to rotate about center
+#     # Affine transform is applied in normalized coordinates [-1, 1]
+#     affine = torch.eye(4, device=device)
+#     affine[:3, :3] = rotation_matrix
+
+#     # Translate center to origin -> apply rotation -> translate back
+#     T1 = torch.eye(4, device=device)
+#     T1[:3, 3] = -center
+
+#     T2 = torch.eye(4, device=device)
+#     T2[:3, 3] = center
+
+#     transform = T2 @ affine @ T1
+#     affine_3x4 = transform[:3, :]  # final affine matrix for grid generation
+
+#     # Convert affine to normalized coordinates
+#     norm_affine = affine_3x4.clone()
+#     norm_affine[:, 0] /= (D - 1) / 2
+#     norm_affine[:, 1] /= (H - 1) / 2
+#     norm_affine[:, 2] /= (W - 1) / 2
+
+#     # Create affine grid and sample
+#     grid = F.affine_grid(norm_affine.unsqueeze(0), volume.shape, align_corners=True)
+#     rotated = F.grid_sample(volume, grid, mode=mode, padding_mode="border", align_corners=True)
+
+#     return rotated.squeeze(0).squeeze(0).cpu().numpy()  # Shape: [D, H, W]
 
 def calculate_rotation_matrix(v1: np.ndarray, v2: np.ndarray) -> np.ndarray:
     """Calculate rotation matrix to rotate vertices1 into vertices2
@@ -494,12 +629,13 @@ def encode_largest_lesion_slice(volume: np.array, mask: np.array, image_processo
     img_slice = rescale_image(img=img_slice)
     img_slice_pil = Image.fromarray(img_slice)
     inputs = image_processor(images=img_slice_pil, return_tensors="pt")
-    inputs = inputs.pixel_values.to(args.device)
+    inputs = inputs.pixel_values.to("cuda")
     outputs = backbone(inputs)
     outputs = backbone.layernorm(outputs.pooler_output).detach().cpu()
     
     return outputs
 
+# @profile
 def main(args: argparse.Namespace):
 
     dataset_name = str(args.dataset)
@@ -508,34 +644,34 @@ def main(args: argparse.Namespace):
     print(f"\n[INFO] Creating {args.dataset} dataset with {args.n_views} views using {args.dinov2_model} model")
     
     if str(args.dataset) == "sarcoma_t1":
-        input_list = glob("/home/johannes/Code/MultiViewGCN/data/sarcoma/*/T1/*.nii.gz")
+        input_list = glob("./data/sarcoma/*/T1/*.nii.gz")
         img_list = sorted([item for item in input_list if not "label" in item])
         seg_list = sorted([item for item in input_list if "label" in item])
-        args.label_csv = "/home/johannes/Code/MultiViewGCN/data/sarcoma/patient_metadata.csv"
+        args.label_csv = "./data/sarcoma/patient_metadata.csv"
     elif str(args.dataset) == "sarcoma_t2":
-        input_list = glob("/home/johannes/Code/MultiViewGCN/data/sarcoma/*/T2/*.nii.gz")
+        input_list = glob("./data/sarcoma/*/T2/*.nii.gz")
         img_list = sorted([item for item in input_list if not "label" in item])
         seg_list = sorted([item for item in input_list if "label" in item])
-        args.label_csv = "/home/johannes/Code/MultiViewGCN/data/sarcoma/patient_metadata.csv"
+        args.label_csv = "./data/sarcoma/patient_metadata.csv"
     elif str(args.dataset) == "headneck":
-        input_list = glob("/home/johannes/Code/MultiViewGCN/data/headneck/*/converted_nii/*/*.nii.gz")
+        input_list = glob("./data/headneck/*/converted_nii/*/*.nii.gz")
         img_list = sorted([item for item in input_list if not "mask" in item]) 
         seg_list = sorted([item for item in input_list if "mask" in item]) 
-        args.label_csv = "/home/johannes/Code/MultiViewGCN/data/headneck/patient_metadata.csv"
+        args.label_csv = "./data/headneck/patient_metadata.csv"
     elif str(args.dataset) == "adrenal":
-        input_list = glob("/home/johannes/Code/MultiViewGCN/data/medmnist3d/adrenalmnist3d_64/adrenal*image*.npy")
+        input_list = glob("./data/medmnist3d/adrenalmnist3d_64/adrenal*image*.npy")
         img_list = sorted(input_list) 
         seg_list = img_list
     elif str(args.dataset) == "nodule":
-        input_list = glob("/home/johannes/Code/MultiViewGCN/data/medmnist3d/nodulemnist3d_64/nodule*image*.npy")
+        input_list = glob("./data/medmnist3d/nodulemnist3d_64/nodule*image*.npy")
         img_list = sorted(input_list) 
         seg_list = img_list
     elif str(args.dataset) == "synapse":
-        input_list = glob("/home/johannes/Code/MultiViewGCN/data/medmnist3d/synapsemnist3d_64/synapse*image*.npy")
+        input_list = glob("./data/medmnist3d/synapsemnist3d_64/synapse*image*.npy")
         img_list = sorted(input_list) 
         seg_list = img_list
     elif str(args.dataset) == "vessel":
-        input_list = glob("/home/johannes/Code/MultiViewGCN/data/medmnist3d/vesselmnist3d_64/vessel*image*.npy")
+        input_list = glob("./data/medmnist3d/vesselmnist3d_64/vessel*image*.npy")
         img_list = sorted(input_list) 
         seg_list = img_list
     else:
@@ -549,23 +685,23 @@ def main(args: argparse.Namespace):
     rot_matrices = create_rotation_matrices(vertices=vertices)
     adjacency_matrix, graph_edge_index = create_graph_topology(vertices=vertices, faces=faces)
 
-    processor = AutoImageProcessor.from_pretrained(args.dinov2_model)
-    model = AutoModel.from_pretrained(args.dinov2_model).to(args.device)
+    processor = AutoImageProcessor.from_pretrained(args.dinov2_model, use_fast=False)
+    model = AutoModel.from_pretrained(args.dinov2_model).to("cuda")
 
     for i in tqdm(range(len(img_list)), desc="Preprocess Data: "):
 
         if str(args.dataset) in ["sarcoma_t1", "sarcoma_t2", "headneck"]:
             
             if str(args.dataset) == "sarcoma_t1":
-                save_path = seg_list[i].replace("label", "graph-fibonacci").replace(".nii.gz", "") + f"_views{args.n_views}_{model_name}.pt"
+                save_path = seg_list[i].replace("label", "graph-fibonacci-edge_attr").replace(".nii.gz", "") + f"_views{args.n_views}_{model_name}.pt"
                 patient_id = [img_list[i].split("/")[-1]]
                 patient_id = [temp[:6] if temp.startswith("Sar") else temp[:4] for temp in patient_id][0]
             elif str(args.dataset) == "sarcoma_t2":
-                save_path = seg_list[i].replace("label", "graph-fibonacci").replace(".nii.gz", "") + f"_views{args.n_views}_{model_name}.pt"
+                save_path = seg_list[i].replace("label", "graph-fibonacci-edge_attr").replace(".nii.gz", "") + f"_views{args.n_views}_{model_name}.pt"
                 patient_id = [img_list[i].split("/")[-1]]
                 patient_id = [temp[:6] if temp.startswith("Sar") else temp[:4] for temp in patient_id][0]
             elif str(args.dataset) == "headneck":
-                save_path = seg_list[i].replace("mask", "graph-fibonacci").replace(".nii.gz", "") + f"_views{args.n_views}_{model_name}.pt" 
+                save_path = seg_list[i].replace("mask", "graph-fibonacci-edge_attr").replace(".nii.gz", "") + f"_views{args.n_views}_{model_name}.pt" 
                 patient_id = [img_list[i].split("/")[-1]]
                 patient_id = patient_id[0].split("_")[0]        
         
@@ -594,7 +730,7 @@ def main(args: argparse.Namespace):
             subject_iso_pad = tio.CropOrPad(target_shape=target_size_iso_pad)(subject_iso_crop)
         
         else: 
-            save_path = img_list[i].replace("image", "graph-fibonacci").replace(".npy", "") + f"_views{args.n_views}_{model_name}.pt" 
+            save_path = img_list[i].replace("image", "graph-fibonacci-edge_attr").replace(".npy", "") + f"_views{args.n_views}_{model_name}.pt" 
             patient_id = [img_list[i].split("/")[-1]]
             patient_id = patient_id[0].split("_")[-1].replace(".npy", "")
             img_arr = np.load(img_list[i])
@@ -607,6 +743,10 @@ def main(args: argparse.Namespace):
 
             subject_iso_pad = tio.CropOrPad(target_shape=int(64*1.5))(subject)
 
+        if os.path.exists(save_path):
+            print(f"[INFO] File already exists: {save_path}")
+            continue
+
         img_arr = subject_iso_pad.img.numpy()[0]
         seg_arr = subject_iso_pad.seg.numpy()[0]
 
@@ -616,8 +756,11 @@ def main(args: argparse.Namespace):
                                                patient_id=patient_id, dataset_name=dataset_name)
         outputs_list.append(encoding)
         for rot_matrix in rot_matrices:
-            img_arr_rotated = rotate_array_around_center(img_arr, rot_matrix, 1)
-            seg_arr_rotated = rotate_array_around_center(seg_arr, rot_matrix, 0)  
+            # img_arr_rotated = rotate_array_around_center(img_arr, rot_matrix, 1)
+            img_arr_rotated = rotate_3d_tensor_around_center(torch.tensor(img_arr, dtype=torch.float32).cuda(), torch.tensor(rot_matrix, dtype=torch.float32).cuda(), order=1, device='cuda')
+            # seg_arr_rotated = rotate_array_around_center(seg_arr, rot_matrix, 0)
+            seg_arr_rotated = rotate_3d_tensor_around_center(torch.tensor(seg_arr, dtype=torch.float32).cuda(), torch.tensor(rot_matrix, dtype=torch.float32).cuda(), order=1, device='cuda')
+
             
             encoding = encode_largest_lesion_slice(volume=img_arr_rotated, mask=seg_arr_rotated, 
                                                    image_processor=processor, backbone=model, 
@@ -627,6 +770,19 @@ def main(args: argparse.Namespace):
 
         features = torch.concatenate(outputs_list, dim=0)        
         edge_index = to_undirected(graph_edge_index)
+
+        rot_matrices = [np.eye(3)] + rot_matrices
+
+        edge_attr = []
+        for i in range(edge_index.shape[-1]):
+            edge = edge_index[:, i]
+            source = edge[0]
+            target = edge[1]
+            source_rot_matrix = rot_matrices[source]
+            target_rot_matrix = rot_matrices[target]
+            transition_matrix = target_rot_matrix @ source_rot_matrix.T
+            edge_attr.append(torch.from_numpy(transition_matrix.flatten()))
+        edge_attr = torch.stack(edge_attr, dim=0)
         
         if dataset_name in ["sarcoma_t1", "sarcoma_t2", "headneck"]:
             df = pd.read_csv(args.label_csv)
@@ -642,13 +798,13 @@ def main(args: argparse.Namespace):
         else:
             label = np.load(img_list[i].replace("image", "label")).item()
 
-        data = Data(x=features, edge_index=edge_index, adj_matrix=adjacency_matrix, label=torch.tensor(label))        
+        data = Data(x=features, edge_index=edge_index, edge_attr=edge_attr, adj_matrix=adjacency_matrix, label=torch.tensor(label))        
         torch.save(data, save_path)
      
 if __name__ == "__main__":    
 
-    for dataset in ["sarcoma_t2"]:
-        for views in [24]:
+    for dataset in ["sarcoma_t1", "sarcoma_t2"]:#, "sarcoma_t2"]:
+        for views in [8, 12, 16, 20]:
             
             parser = argparse.ArgumentParser()
             parser.add_argument("--dataset", default="sarcoma_t1", help="Name of dataset to be processed.", type=Path,
@@ -663,4 +819,5 @@ if __name__ == "__main__":
 
             args.dataset = dataset
             args.n_views = views
+            args.device = "cuda" if torch.cuda.is_available() else "cpu"
             main(args)  

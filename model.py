@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch_geometric.nn import global_mean_pool, global_add_pool, global_max_pool
-from torch_geometric.nn import GCNConv, SAGEConv, GATConv, GINConv, BatchNorm, GraphNorm
+from torch_geometric.nn import GCNConv, SAGEConv, GATConv, GINConv, GMMConv, SplineConv, NNConv, CGConv, BatchNorm, GraphNorm
 from torch_geometric.nn.models import GCN, MLP
 import torch.nn.functional as F
 from torch.nn import Linear, Dropout, BatchNorm1d
@@ -17,6 +17,10 @@ from torch_geometric.data import Data
 from torch_geometric.nn.pool import SAGPooling
 from torch_geometric.nn.inits import uniform
 from typing import Literal, Union
+import torchvision
+import copy
+from i3res import I3ResNet
+from i3dense import I3DenseNet
 
 
 class PyGModel(torch.nn.Module):
@@ -302,3 +306,231 @@ class MLP(torch.nn.Module):
         x = self.lin2(x)
 
         return x
+
+
+from torch_geometric.nn import GINConv, GINEConv
+from torch.nn import Linear, ReLU, Sequential, LeakyReLU
+
+class GINE(torch.nn.Module):
+    def __init__(self, in_channels, hidden_channels, out_channels, num_layers, readout):
+        super().__init__()
+
+        self.readout = readout
+
+        self.convs = torch.nn.ModuleList()
+        self.batch_norms = torch.nn.ModuleList()
+
+        for i in range(num_layers):
+            mlp = Sequential(
+                Linear(in_channels, 2 * hidden_channels),
+                BatchNorm(2 * hidden_channels),
+                ReLU(),
+                Linear(2 * hidden_channels, hidden_channels),
+            )
+            # conv = GINConv(mlp, train_eps=False)
+            conv = GINEConv(mlp, train_eps=False, edge_dim=9)
+
+            self.convs.append(conv)
+            self.batch_norms.append(BatchNorm(hidden_channels))
+
+            in_channels = hidden_channels
+
+        self.lin1 = Linear(hidden_channels, hidden_channels)
+        self.batch_norm1 = BatchNorm(hidden_channels)
+        self.lin2 = Linear(hidden_channels, out_channels)
+
+    def forward(self, x, edge_index, batch, edge_attr=None):
+        for conv, batch_norm in zip(self.convs, self.batch_norms):
+            x = F.relu(batch_norm(conv(x, edge_index, edge_attr)))
+            # x = F.relu(batch_norm(conv(x, edge_index)))
+
+        if self.readout == "mean":
+            x = global_mean_pool(x, batch)
+        elif self.readout == "sum":
+            x = global_add_pool(x, batch)        
+        
+        x = F.relu(self.batch_norm1(self.lin1(x)))
+        x = F.dropout(x, p=0.5, training=self.training)
+        x = self.lin2(x)
+        # return F.log_softmax(x, dim=-1)
+        return x
+
+
+class CNN(torch.nn.Module):
+    def __init__(self, 
+                 architecture: Literal["ResNet", "DenseNet", "ModelsGenesis"] = "ResNet", 
+                 depth: Literal[10, 18, 34, 50, 101] = 50, 
+                 pretrained: bool = True,
+                 num_classes: int = 2):       
+        super(CNN, self).__init__()
+
+        self.architecture = architecture
+
+        match architecture:
+            case "ResNet":
+                from monai.networks.nets import ResNetFeatures
+                self.model = ResNetFeatures(model_name=f"resnet{str(depth)}", pretrained=pretrained, spatial_dims=3, in_channels=1)
+                self.pool = self.model.avgpool
+                self.linear = torch.nn.Linear(self.get_last_conv_out_channels(self.model), num_classes)           
+            
+            case "ModelsGenesis":
+
+                import unet3d
+
+                # prepare the 3D model
+                class TargetNet(nn.Module):
+                    def __init__(self, base_model,n_class=num_classes):
+                        super(TargetNet, self).__init__()
+
+                        self.base_model = base_model
+                        self.dense_1 = nn.Linear(512, 1024, bias=True)
+                        self.dense_2 = nn.Linear(1024, n_class, bias=True)
+
+                    def forward(self, x):
+                        self.base_model(x)
+                        self.base_out = self.base_model.out512
+                        # This global average polling is for shape (N,C,H,W) not for (N, H, W, C)
+                        # where N = batch_size, C = channels, H = height, and W = Width
+                        self.out_glb_avg_pool = F.avg_pool3d(self.base_out, kernel_size=self.base_out.size()[2:]).view(self.base_out.size()[0],-1)
+                        self.linear_out = self.dense_1(self.out_glb_avg_pool)
+                        final_out = self.dense_2( F.relu(self.linear_out))
+                        return final_out
+                        
+                base_model = unet3d.UNet3D()
+
+                #Load pre-trained weights
+                weight_dir = 'pretrained_weights/Genesis_Chest_CT.pt'
+                checkpoint = torch.load(weight_dir)
+                state_dict = checkpoint['state_dict']
+                unParalled_state_dict = {}
+                for key in state_dict.keys():
+                    unParalled_state_dict[key.replace("module.", "")] = state_dict[key]
+                base_model.load_state_dict(unParalled_state_dict, strict=False)
+                self.model = TargetNet(base_model)
+                # target_model = TargetNet(base_model)
+                # target_model = nn.DataParallel(target_model, device_ids = [i for i in range(torch.cuda.device_count())])
+
+                # self.model = target_model
+            
+            case "I3D-DenseNet121":
+                densenet = torchvision.models.densenet121(pretrained=True)
+                self.model = I3DenseNet(copy.deepcopy(densenet), frame_nb=8, num_classes=num_classes)
+
+            case "I3D-ResNet50":
+                resnet = torchvision.models.resnet50(pretrained=True)
+                self.model = I3ResNet(copy.deepcopy(resnet), frame_nb=16, class_nb=num_classes)
+    
+    def get_last_conv_out_channels(self, model):
+        last_conv = None
+        for layer in model.modules():
+            if isinstance(layer, nn.Conv3d):
+                last_conv = layer
+        if last_conv is None:
+            raise ValueError("No Conv3d layers found in model.")
+        return last_conv.out_channels        
+
+    def forward(self, x):
+
+        if self.architecture == "ModelsGenesis":
+            x = self.model(x)
+        elif self.architecture == "I3D-DenseNet121":
+            x = self.model(x)
+        elif self.architecture == "I3D-ResNet50":
+            x = self.model(x)            
+        else:
+            x = self.model(x)[-1]
+            x = self.pool(x)
+            x = x.view(x.size(0), -1)
+            x = self.linear(x)
+
+        return x
+
+class GNN(torch.nn.Module):
+    # https://github.com/pyg-team/pytorch_geometric/discussions/2891
+    def __init__(self, 
+                 gnn_operator: Literal["GCN", "GAT", "SAGE", "GIN", "GINE", "GMM", "Spline", "NN", "CG"] = "GCN",
+                 aggregate: Literal["mean", "sum", "max"] = "mean",                 
+                 input_dim: int = 384, 
+                 hidden_dim: int = 32, 
+                 num_classes: int = 2,
+                 num_layers:int = 3,
+                 readout: Literal["mean", "sum", "max"] = "mean",
+                 hierarchical_readout: bool = False,
+                 include_edge_attr: bool = False,
+                 edge_attr_dim: int = 9, 
+                 flow: Literal["source_to_target", "target_to_source"] = "target_to_source",):
+           
+        super(GNN, self).__init__()       
+
+        self.hierarchical_readout = hierarchical_readout
+               
+        match include_edge_attr:
+            case True:
+                match gnn_operator:                    
+                    case "GAT":
+                        self.conv = GATConv
+                    case "GINE":
+                        self.conv = GINEConv
+                    case "GMM":
+                        self.conv = GMMConv
+                    case "Spline":
+                        self.conv = SplineConv
+                    case "NN":
+                        self.conv = NNConv
+                    case "CG":
+                        self.conv = CGConv
+            case False:
+                match gnn_operator:
+                    case "GCN":
+                        self.conv = GCNConv
+                    case "SAGE":
+                        self.conv = SAGEConv
+                    case "GAT":
+                        self.conv = GATConv
+                    case "GIN":
+                        self.conv = GINConv                    
+
+        match readout:
+            case "mean":
+                self.pool = global_mean_pool
+            case "sum":
+                self.pool = global_add_pool
+            case "max":
+                self.pool = global_max_pool
+            case _:
+                raise ValueError(f"Invalid readout method: {readout}. Choose from 'mean', 'sum', or 'max'.")
+    
+        
+
+        self.convs = torch.nn.ModuleList()
+        self.batch_norms = torch.nn.ModuleList()
+
+        for i in range(num_layers):
+            if i == 0:
+                conv = self.conv(input_dim, hidden_dim, edge_dim=edge_attr_dim)
+            else:
+                conv = self.conv(hidden_dim, hidden_dim, edge_dim=edge_attr_dim)
+            self.convs.append(conv)
+            self.batch_norms.append(BatchNorm(hidden_dim))
+
+        
+        self.linear = torch.nn.Linear(hidden_dim, num_classes) if not hierarchical_readout else torch.nn.Linear(hidden_dim*num_layers, num_classes)
+
+    def forward(self, data):
+
+        x, edge_index, edge_attr, batch = data.x, data.edge_index, data.edge_attr, data.batch
+
+        features = []
+        for conv, batch_norm in zip(self.convs, self.batch_norms):
+            x = F.relu(batch_norm(conv(x, edge_index)))
+            features.append(torch.unsqueeze(x, dim=0))
+        
+        x = torch.cat(features, dim=0)
+        if self.hierarchical_readout:
+            pass
+
+        x = self.pool(x, batch)
+        x = self.linear(x)
+
+        return x
+       

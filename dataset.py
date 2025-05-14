@@ -4,6 +4,8 @@ from torch.utils.data import Dataset
 from sklearn.utils.class_weight import compute_class_weight
 from sklearn.model_selection import train_test_split
 from glob import glob
+import pandas as pd
+from sklearn.model_selection import train_test_split
 
 
 # class SarcomaDataset(Dataset):
@@ -114,8 +116,9 @@ class SarcomaDatasetCV(Dataset):
 def get_data(datset_name: str, n_views: int, dino_size: str):
 
     if datset_name == "sarcoma_t1":        
-        files = glob(f"/home/johannes/Code/MultiViewGCN/data/sarcoma/*/T1/*graph-fibonacci_views{n_views}_dinov2-{dino_size}.pt")
-        data = [torch.load(temp) for temp in files]
+        # files = glob(f"./data/sarcoma/*/T1/*graph-fibonacci_views{n_views}_dinov2-{dino_size}.pt")
+        files = glob(f"./data/sarcoma/*/T1/*graph-fibonacci-edge_attr_views{n_views}_dinov2-{dino_size}.pt")
+        data = [torch.load(temp, weights_only=False) for temp in files]
         labels = [graph.label.item() for graph in data]
         labels = [0 if item == 1 else 1 for item in labels]
 
@@ -125,8 +128,8 @@ def get_data(datset_name: str, n_views: int, dino_size: str):
         labels = torch.tensor(labels).to(torch.long)
     
     elif datset_name == "sarcoma_t2":        
-        files = glob(f"/home/johannes/Code/MultiViewGCN/data/sarcoma/*/T2/*graph-fibonacci_views{n_views}_dinov2-{dino_size}.pt")
-        data = [torch.load(temp) for temp in files]
+        files = glob(f"./data/sarcoma/*/T2/*graph-fibonacci_views{n_views}_dinov2-{dino_size}.pt")
+        data = [torch.load(temp, weights_only=False) for temp in files]
         labels = [graph.label.item() for graph in data]
         labels = [0 if item == 1 else 1 for item in labels]
 
@@ -136,38 +139,82 @@ def get_data(datset_name: str, n_views: int, dino_size: str):
         labels = torch.tensor(labels).to(torch.long)
     
     elif datset_name == "headneck":
-        files = glob(f"/home/johannes/Code/MultiViewGCN/data/headneck/*/converted_nii/*/*graph-fibonacci*views{n_views}_dinov2-{dino_size}.pt")        
-        data = [torch.load(temp) for temp in files]
+        files = glob(f"./data/headneck/*/converted_nii/*/*graph-fibonacci*views{n_views}_dinov2-{dino_size}.pt")        
+        data = [torch.load(temp, weights_only=False) for temp in files]
         labels = [graph.label.item() for graph in data]
         labels = [0 if item == 1 else 1 for item in labels]
         labels = torch.tensor(labels).to(torch.long)
     
     elif datset_name == "vessel":
-        files = glob(f"/home/johannes/Code/MultiViewGCN/data/medmnist3d/vesselmnist3d_64/*graph-fibonacci*views{n_views}_dinov2-{dino_size}.pt")        
-        data = [torch.load(temp) for temp in files]
+        files = glob(f"./data/medmnist3d/vesselmnist3d_64/*graph-fibonacci*views{n_views}_dinov2-{dino_size}.pt")        
+        data = [torch.load(temp, weights_only=False) for temp in files]
         labels = [graph.label.item() for graph in data]
         # labels = [0 if item == 1 else 1 for item in labels]
         labels = torch.tensor(labels).to(torch.long)
     
     elif datset_name == "synapse":
-        files = glob(f"/home/johannes/Code/MultiViewGCN/data/medmnist3d/synapsemnist3d_64/*graph-fibonacci*views{n_views}_dinov2-{dino_size}.pt")        
-        data = [torch.load(temp) for temp in files]
+        files = glob(f"./data/medmnist3d/synapsemnist3d_64/*graph-fibonacci*views{n_views}_dinov2-{dino_size}.pt")        
+        data = [torch.load(temp, weights_only=False) for temp in files]
         labels = [graph.label.item() for graph in data]
         # labels = [0 if item == 1 else 1 for item in labels]
         labels = torch.tensor(labels).to(torch.long)
     
     elif datset_name == "adrenal":
-        files = glob(f"/home/johannes/Code/MultiViewGCN/data/medmnist3d/adrenalmnist3d_64/*graph-fibonacci*views{n_views}_dinov2-{dino_size}.pt")        
-        data = [torch.load(temp) for temp in files]
+        files = glob(f"./data/medmnist3d/adrenalmnist3d_64/*graph-fibonacci*views{n_views}_dinov2-{dino_size}.pt")        
+        data = [torch.load(temp, weights_only=False) for temp in files]
         labels = [graph.label.item() for graph in data]
         # labels = [0 if item == 1 else 1 for item in labels]
         labels = torch.tensor(labels).to(torch.long)
 
     elif datset_name == "nodule":
-        files = glob(f"/home/johannes/Code/MultiViewGCN/data/medmnist3d/nodulemnist3d_64/*graph-fibonacci*views{n_views}_dinov2-{dino_size}.pt")        
-        data = [torch.load(temp) for temp in files]
+        files = glob(f"./data/medmnist3d/nodulemnist3d_64/*graph-fibonacci*views{n_views}_dinov2-{dino_size}.pt")        
+        data = [torch.load(temp, weights_only=False) for temp in files]
         labels = [graph.label.item() for graph in data]
         # labels = [0 if item == 1 else 1 for item in labels]
         labels = torch.tensor(labels).to(torch.long)
 
     return data, labels
+
+
+
+def get_data_dicts(task: str) -> tuple[list[str], list[int]]:
+
+    if task == "sarcoma_t1_grading_binary":
+        images = sorted(glob("./data/sarcoma/*/T1/*.nii.gz"))
+        images = [img for img in images if not "label" in img]
+
+        masks = sorted(glob("./data/sarcoma/*/T1/*.nii.gz"))
+        masks = [mask for mask in masks if "label" in mask]        
+        
+        labels = []
+        df = pd.read_csv('./data/sarcoma/patient_metadata.csv')
+        for img in images:
+            img = img.split("/")[-1].split(".")[0]            
+            patient_id = img[:6] if img.startswith("Sar") else img[:4]
+            grading = df[df["ID"] == patient_id].Grading.item()
+            grading = 0 if grading == 1 else 1            
+            labels.append(grading)
+
+        data_dicts = [{"image": img, "mask": mask, "label": label} for img, mask, label in zip(images, masks, labels)]
+    
+    else:
+        raise ValueError(f"Unknown task: {task}")
+    
+    return data_dicts, labels
+
+
+def split_dataset(images: list[str], labels: list[int], val_size: float = 0.15, test_size: float = 0.15, seed: int = 42):
+    
+
+    # First split off the test set
+    train_images, temp_images, train_labels, temp_labels = train_test_split(
+        images, labels, test_size=val_size + test_size, stratify=labels, random_state=seed
+    )
+
+    # Then split temp into val and test
+    relative_test_size = test_size / (val_size + test_size)
+    val_images, test_images, val_labels, test_labels = train_test_split(
+        temp_images, temp_labels, test_size=relative_test_size, stratify=temp_labels, random_state=seed
+    )
+
+    return train_images, train_labels, val_images, val_labels, test_images, test_labels
