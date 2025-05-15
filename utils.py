@@ -68,7 +68,7 @@ def save_conda_yaml():
 def create_cv_splits(task: str) -> None:
 
     match task:
-        case "sarcoma_grading_t1_binary":
+        case "sarcoma_t1_grading_binary":
 
             save_path = f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/{task}_folds.pt"
             if not os.path.exists(save_path):
@@ -91,17 +91,22 @@ def create_cv_splits(task: str) -> None:
                 dict_folds = {}
                 for fold, (train_idx, test_idx) in enumerate(skfold.split(subjects, labels)):
                     train_subjects = [subjects[i] for i in train_idx]
+                    train_labels = [labels[i] for i in train_idx]
                     test_subjects = [subjects[i] for i in test_idx]
+                    test_labels = [labels[i] for i in test_idx]
 
                     dict_folds[fold] = {"train_subjects": train_subjects,
-                                        "test_subjects": test_subjects}
+                                        "train_labels": train_labels,
+                                        "test_subjects": test_subjects,
+                                        "test_labels": test_labels
+                                        }
 
                 torch.save(dict_folds, save_path)
                 print("CV Splits saved successfully!")
             else:
                 print("CV Splits already exist.")
         
-        case "sarcoma_grading_t2_binary":
+        case "sarcoma_t2_grading_binary":
             
             save_path = f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/{task}_folds.pt"
             if not os.path.exists(save_path):
@@ -126,10 +131,15 @@ def create_cv_splits(task: str) -> None:
                 dict_folds = {}
                 for fold, (train_idx, test_idx) in enumerate(skfold.split(subjects, labels)):
                     train_subjects = [subjects[i] for i in train_idx]
+                    train_labels = [labels[i] for i in train_idx]
                     test_subjects = [subjects[i] for i in test_idx]
+                    test_labels = [labels[i] for i in test_idx]
 
                     dict_folds[fold] = {"train_subjects": train_subjects,
-                                        "test_subjects": test_subjects}
+                                        "train_labels": train_labels,
+                                        "test_subjects": test_subjects,
+                                        "test_labels": test_labels
+                                        }
 
                 torch.save(dict_folds, save_path)
                 print("CV Splits saved successfully!")
