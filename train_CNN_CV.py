@@ -1,31 +1,22 @@
-import mlflow.pytorch
-import mlflow.pytorch
 import torch
-import monai
 import mlflow
-import math
-import mlflow.pytorch
 import numpy as np
 from model import CNN
 from torch.amp import GradScaler
 from torch import autocast
-import pandas as pd
-from dataset import get_data_dicts, split_dataset
 import os
 from monai.transforms import (
     Compose, LoadImaged, EnsureChannelFirstd,
     NormalizeIntensityd, CropForegroundd,
-    Orientationd, Spacingd, ToTensord, Lambdad, DivisiblePadd, SpatialPad
+    Orientationd, Spacingd, ToTensord, Lambdad, DivisiblePadd
 )
 from monai.data import PersistentDataset, DataLoader
 from monai.data import pad_list_data_collate
 from sklearn.utils.class_weight import compute_class_weight
-from torch.utils.data import Subset
 from sklearn.metrics import balanced_accuracy_score, matthews_corrcoef, roc_auc_score, f1_score
-from sklearn.model_selection import StratifiedKFold
-
-import subprocess
 from utils import seed_everything, save_conda_yaml
+from glob import glob
+from utils import create_cv_splits
 
 EPOCHS = 300
 BATCH_SIZE = 2
@@ -40,7 +31,6 @@ FOLDS = 5
 PRECISION = torch.float16
 
 def main(fold, architecture, task):
-
 
     ARCHITECTURE = architecture
     if ARCHITECTURE == "I3D-DenseNet121":
@@ -80,8 +70,17 @@ def main(fold, architecture, task):
     # ----------------------------
     # Load data
     # ----------------------------
-    data, labels, subjects = get_data_dicts(task=task)
 
+    create_cv_splits(task=task)
+
+    match task:
+        case "sarcoma_t1_grading_binary":
+            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/sarcoma_t1_grading_binary_folds.pt")
+        case "sarcoma_t2_grading_binary":
+            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/sarcoma_t2_grading_binary_folds.pt")
+        case _:
+            raise ValueError(f"Given task '{task}' unkown!")
+        
     # ----------------------------
     # Define the transforms
     # ----------------------------
@@ -99,33 +98,61 @@ def main(fold, architecture, task):
     ])
 
     # ----------------------------
-    # Create PersistentDataset
+    # Start Cross Validation
     # ----------------------------
 
-    dataset = PersistentDataset(data=data, transform=transforms, cache_dir="./dataset_cache_dir"  )    
-    skf = StratifiedKFold(n_splits=FOLDS, shuffle=True, random_state=SEED) 
-
-    for current_fold, (train_val_idx, test_idx) in enumerate(skf.split(data, labels)):
+    for current_fold in range(FOLDS):
 
         if current_fold != fold:
             continue
 
         print(f"\nFold {current_fold}")
 
-        sequence = task.split("_")[1]
-        train_val_idx = torch.load(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/fold{current_fold}_train_indices_{sequence}.pt", weights_only=False)
-        test_idx = torch.load(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/fold{current_fold}_test_indices_{sequence}.pt", weights_only=False)
+        current_fold_dict = folds_dict[current_fold]
+        train_subjects = current_fold_dict["train_subjects"]
+        train_labels = current_fold_dict["train_labels"]
+        test_subjects = current_fold_dict["test_subjects"]
+        test_labels = current_fold_dict["test_labels"]
 
-        mlflow.log_param(f"fold_{fold}_train_idx", train_val_idx)
-        mlflow.log_param(f"fold_{fold}_test_idx", test_idx)
-        train_subjects = [subjects[i] for i in train_val_idx]
-        test_subjects = [subjects[i] for i in test_idx]
-        mlflow.log_param(f"fold_{fold}_train_subjects", train_subjects)
-        mlflow.log_param(f"fold_{fold}_test_subjects", test_subjects)
+        mlflow.log_param("train_subjects", train_subjects)
+        mlflow.log_param("test_subjects", test_subjects)
 
-        # Split into train/val and test
-        train_val_data = Subset(dataset, train_val_idx)
-        test_data = Subset(dataset, test_idx)
+        match task:
+            case "sarcoma_t1_grading_binary":
+                imgs = [file for file in glob("./data/sarcoma/*/T1/*nii.gz")]
+                imgs = [file for file in imgs if not "label" in file]
+                
+                segs = [file for file in glob("./data/sarcoma/*/T1/*nii.gz")]
+                segs = [file for file in segs if "label" in file]
+
+                train_imgs = [file for file in imgs if any(subject in file for subject in train_subjects)]
+                train_segs = [file for file in segs if any(subject in file for subject in train_subjects)]
+                test_imgs = [file for file in imgs if any(subject in file for subject in test_subjects)]
+                test_segs = [file for file in segs if any(subject in file for subject in test_subjects)]
+
+                train_data_dicts = [{"image": img, "mask": mask, "label": label} for img, mask, label in zip(train_imgs, train_segs, train_labels)]
+                test_data_dicts = [{"image": img, "mask": mask, "label": label} for img, mask, label in zip(test_imgs, test_segs, test_labels)]
+
+                train_val_data = PersistentDataset(data=train_data_dicts, transform=transforms, cache_dir="./dataset_cache_dir") 
+                test_data = PersistentDataset(data=test_data_dicts, transform=transforms, cache_dir="./dataset_cache_dir") 
+
+            case "sarcoma_t2_grading_binary":
+                imgs = [file for file in glob("./data/sarcoma/*/T2/*nii.gz")]
+                imgs = [file for file in imgs if not "label" in file]
+                
+                segs = [file for file in glob("./data/sarcoma/*/T2/*nii.gz")]
+                segs = [file for file in segs if "label" in file]
+
+                train_imgs = [file for file in imgs if any(subject in file for subject in train_subjects)]
+                train_segs = [file for file in segs if any(subject in file for subject in train_subjects)]
+                test_imgs = [file for file in imgs if any(subject in file for subject in test_subjects)]
+                test_segs = [file for file in segs if any(subject in file for subject in test_subjects)]
+
+                train_data_dicts = [{"image": img, "mask": mask, "label": label} for img, mask, label in zip(train_imgs, train_segs, train_labels)]
+                test_data_dicts = [{"image": img, "mask": mask, "label": label} for img, mask, label in zip(test_imgs, test_segs, test_labels)]
+
+                train_val_data = PersistentDataset(data=train_data_dicts, transform=transforms, cache_dir="./dataset_cache_dir") 
+                test_data = PersistentDataset(data=test_data_dicts, transform=transforms, cache_dir="./dataset_cache_dir") 
 
         # Further split train_val into training and validation (80/20 split)
         train_size = int(0.8 * len(train_val_data))
@@ -145,8 +172,8 @@ def main(fold, architecture, task):
         model = CNN(architecture=ARCHITECTURE, depth=DEPTH, pretrained=PRETRAINED).to(device)
         pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"Number of trainable parameters: {pytorch_total_params}")
-        mlflow.log_param("num_trainable_params", pytorch_total_params)   
-        train_labels = np.array(labels, dtype=np.int64)[train_data.indices]
+        mlflow.log_param("num_trainable_params", pytorch_total_params)  
+        train_labels = np.array(train_labels, dtype=np.int64)
         class_weights = compute_class_weight(class_weight='balanced', classes=np.unique(train_labels), y=train_labels.flatten())
         class_weights = torch.tensor(class_weights).to(torch.float32).to(device)
         loss_fn = torch.nn.CrossEntropyLoss(weight=class_weights)
@@ -186,26 +213,16 @@ def main(fold, architecture, task):
                 if "I3D" in ARCHITECTURE:
                     train_image = train_image.repeat(1, 3, 1, 1, 1)
 
-                # if ARCHITECTURE == "I3D-DenseNet121":
-                #     train_image = SpatialPad(spatial_size=(3, 208, 208, 208))(train_image)
-
                 train_label = batch_data["label"].as_tensor().to(device)
-                optimizer.zero_grad()
-
-                # print("\n Shape of train_image: ", train_image.shape)   
-                # print("Number of voxels in train_image: ", train_image.numel())             
+                optimizer.zero_grad()            
 
                 with autocast(device_type='cuda', dtype=PRECISION):
                     output = model(train_image)
                     loss = loss_fn(output, train_label)
-                    # print(torch.cuda.memory_allocated() / 1e6, "MB allocated")
-                    # print(torch.cuda.max_memory_allocated() / 1e6, "MB max allocated")
 
                 scaler.scale(loss).backward()            
                 scaler.step(optimizer)            
                 scaler.update()
-                # print(torch.cuda.memory_allocated() / 1e6, "MB allocated")
-                # print(torch.cuda.max_memory_allocated() / 1e6, "MB max allocated")
 
                 train_loss_list.append(loss.item())
                 train_pred = torch.argmax(output, dim=1)
@@ -217,7 +234,6 @@ def main(fold, architecture, task):
             train_true = np.concatenate(train_true_list)
             train_pred = np.concatenate(train_pred_list)
             train_score = np.concatenate(train_score_list)
-            # train_score = np.array([0.5 if math.isnan(x) else x for x in train_score])
             train_f1 = f1_score(train_true, train_pred, average='weighted')
             train_mcc = matthews_corrcoef(train_true, train_pred)
             train_auc = roc_auc_score(train_true, train_score)
@@ -235,9 +251,6 @@ def main(fold, architecture, task):
 
                     if "I3D" in ARCHITECTURE:
                         val_image = val_image.repeat(1, 3, 1, 1, 1)
-                    
-                    # if ARCHITECTURE == "I3D-DenseNet121":
-                    #     val_image = SpatialPad(spatial_size=(3, 224, 224, 224))(val_image)
 
                     val_label = val_data["label"].as_tensor().to(device)
                     val_output = model(val_image)
@@ -254,7 +267,6 @@ def main(fold, architecture, task):
             val_true = np.concatenate(val_true_list)
             val_pred = np.concatenate(val_pred_list)
             val_score = np.concatenate(val_score_list)
-            # val_score = np.array([0.5 if math.isnan(x) else x for x in val_score])
             val_f1 = f1_score(val_true, val_pred, average='weighted')
             val_mcc = matthews_corrcoef(val_true, val_pred)
             val_auc = roc_auc_score(val_true, val_score)
@@ -355,9 +367,6 @@ def main(fold, architecture, task):
 
                 if "I3D" in ARCHITECTURE:
                     test_image = test_image.repeat(1, 3, 1, 1, 1)
-                
-                # if ARCHITECTURE == "I3D-DenseNet121":
-                #     test_image = SpatialPad(spatial_size=(3, 224, 224, 224))(test_image)
 
                 test_label = test_data["label"].as_tensor().to(device)
                 test_output = model(test_image)
@@ -395,7 +404,7 @@ def main(fold, architecture, task):
 
 if __name__ == "__main__":
 
-    task = "sarcoma_t1_grading_binary"
+    task = "sarcoma_t2_grading_binary"
 
     for architecture in ["ResNet"]:
         for fold in range(FOLDS):    
