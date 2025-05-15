@@ -25,7 +25,7 @@ from sklearn.metrics import balanced_accuracy_score, matthews_corrcoef, roc_auc_
 from sklearn.model_selection import StratifiedKFold
 
 import subprocess
-from utils import seed_everything
+from utils import seed_everything, save_conda_yaml
 
 EPOCHS = 300
 BATCH_SIZE = 2
@@ -39,7 +39,7 @@ SEED = 42
 FOLDS = 5
 PRECISION = torch.float16
 
-def main(fold, architecture):
+def main(fold, architecture, task):
 
 
     ARCHITECTURE = architecture
@@ -57,10 +57,10 @@ def main(fold, architecture):
     # ----------------------------
     # Miscellaneous stuff
     # ----------------------------
-    seed_everything(SEED)
+    seed_everything(SEED)    
     torch.cuda.empty_cache()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    mlflow.log_artifact("train_CNN.py")
+    mlflow.log_artifact("train_CNN_CV.py")
     mlflow.log_artifact("model.py")
     mlflow.log_artifact("dataset.py")
     mlflow.log_artifact("utils.py")
@@ -74,29 +74,13 @@ def main(fold, architecture):
     mlflow.log_param("initial_lr", INITIAL_LR)
     mlflow.log_param("target_lr", TARGET_LR)
     mlflow.log_param("fold", fold)
-
-    # Set filename
-    conda_yaml_path = "conda.yaml"
-
-    # Run the command to export current conda environment to a YAML file
-    try:
-        with open(conda_yaml_path, "w") as f:
-            subprocess.run(
-                ["conda", "env", "export"],
-                stdout=f,
-                check=True,
-            )
-        print(f"Conda environment successfully exported to '{conda_yaml_path}'.")
-
-    except subprocess.CalledProcessError as e:
-        print("Failed to export conda environment:", e)
-
+    conda_yaml_path = save_conda_yaml()
     mlflow.log_artifact(conda_yaml_path)   
 
     # ----------------------------
     # Load data
     # ----------------------------
-    data, labels = get_data_dicts(task="sarcoma_t1_grading_binary")
+    data, labels, subjects = get_data_dicts(task=task)
 
     # ----------------------------
     # Define the transforms
@@ -127,6 +111,17 @@ def main(fold, architecture):
             continue
 
         print(f"\nFold {current_fold}")
+
+        sequence = task.split("_")[1]
+        train_val_idx = torch.load(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/fold{current_fold}_train_indices_{sequence}.pt", weights_only=False)
+        test_idx = torch.load(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/fold{current_fold}_test_indices_{sequence}.pt", weights_only=False)
+
+        mlflow.log_param(f"fold_{fold}_train_idx", train_val_idx)
+        mlflow.log_param(f"fold_{fold}_test_idx", test_idx)
+        train_subjects = [subjects[i] for i in train_val_idx]
+        test_subjects = [subjects[i] for i in test_idx]
+        mlflow.log_param(f"fold_{fold}_train_subjects", train_subjects)
+        mlflow.log_param(f"fold_{fold}_test_subjects", test_subjects)
 
         # Split into train/val and test
         train_val_data = Subset(dataset, train_val_idx)
@@ -332,7 +327,7 @@ def main(fold, architecture):
             mlflow.log_metric("val_auc", val_auc, step=epoch)
             mlflow.log_metric("val_bacc", val_bacc, step=epoch)
             mlflow.log_metric("learning_rate", lr, step=epoch)
-            torch.cuda.empty_cache()
+            torch.cuda.empty_cache()            
 
         # Log the best model parameters (only once)    
         mlflow.log_param("best_val_loss", best_val_loss)
@@ -389,20 +384,22 @@ def main(fold, architecture):
         mlflow.log_metric("test_f1", test_f1)
         mlflow.log_metric("test_mcc", test_mcc)
         mlflow.log_metric("test_auc", test_auc)
-        mlflow.log_metric("test_bacc", test_bacc)
+        mlflow.log_metric("test_bacc", test_bacc)   
 
         os.remove("model_auc.pth")
         os.remove("model_bacc.pth")
         os.remove("model_f1.pth")
         os.remove("model_loss.pth")
         os.remove("model_mcc.pth")
-        os.remove("conda.yaml")
+        os.remove("conda.yaml")     
 
 if __name__ == "__main__":
 
+    task = "sarcoma_t1_grading_binary"
+
     for architecture in ["ResNet"]:
         for fold in range(FOLDS):    
-            mlflow.set_experiment("sarcoma_t1_grading_binary")
+            mlflow.set_experiment(task)
             mlflow.start_run()    
-            main(fold, architecture)
+            main(fold, architecture, task)
             mlflow.end_run()

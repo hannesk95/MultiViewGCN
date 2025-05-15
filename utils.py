@@ -7,6 +7,9 @@ from glob import glob
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import confusion_matrix
+import subprocess
+from sklearn.model_selection import StratifiedKFold
+import pandas as pd
 
 def seed_everything(seed: int):
     seed = 42
@@ -42,5 +45,97 @@ def save_confusion_matrix(y_true, y_pred, result_dir, split):
     plt.savefig(filepath, dpi=300)  # Save the figure as a PNG file
     plt.close()  # Close the figure to avoid displaying it in interactive environments
 
+def save_conda_yaml():
+    # Set filename
+    conda_yaml_path = "conda.yaml"
+
+    # Run the command to export current conda environment to a YAML file
+    try:
+        with open(conda_yaml_path, "w") as f:
+            subprocess.run(
+                ["conda", "env", "export"],
+                stdout=f,
+                check=True,
+            )
+        print(f"Conda environment successfully exported to '{conda_yaml_path}'.")
+
+    except subprocess.CalledProcessError as e:
+        print("Failed to export conda environment:", e)
+
+    return conda_yaml_path
 
 
+def create_cv_splits(task: str) -> None:
+
+    match task:
+        case "sarcoma_grading_t1_binary":
+
+            save_path = f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/{task}_folds.pt"
+            if not os.path.exists(save_path):
+
+                files = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/*/T1/*.nii.gz"))
+                files = [file for file in files if not "label" in file]
+                subjects = [file.split("/")[-1].replace(".nii.gz", "") for file in files]
+                subjects = [subject.replace("T1", "") for subject in subjects]
+                subjects = [subject.replace("_updated", "") for subject in subjects]
+
+                labels = []
+                df = pd.read_csv("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/patient_metadata.csv")
+
+                for subject in subjects:
+                    grading = df[df["ID"] == subject].Grading.item()
+                    labels.append(0 if grading == 1 else 1)
+
+                skfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
+                dict_folds = {}
+                for fold, (train_idx, test_idx) in enumerate(skfold.split(subjects, labels)):
+                    train_subjects = [subjects[i] for i in train_idx]
+                    test_subjects = [subjects[i] for i in test_idx]
+
+                    dict_folds[fold] = {"train_subjects": train_subjects,
+                                        "test_subjects": test_subjects}
+
+                torch.save(dict_folds, save_path)
+                print("CV Splits saved successfully!")
+            else:
+                print("CV Splits already exist.")
+        
+        case "sarcoma_grading_t2_binary":
+            
+            save_path = f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/{task}_folds.pt"
+            if not os.path.exists(save_path):
+
+                files = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/*/T2/*.nii.gz"))
+                files = [file for file in files if not "label" in file]
+                subjects = [file.split("/")[-1].replace(".nii.gz", "") for file in files]
+                subjects = [subject.replace("STIR", "") for subject in subjects]
+                subjects = [subject.replace("_updated", "") for subject in subjects]
+                subjects = [subject.replace("_ax", "") for subject in subjects]
+                subjects = [subject.replace("_sag", "") for subject in subjects]
+
+                labels = []
+                df = pd.read_csv("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/patient_metadata.csv")
+
+                for subject in subjects:
+                    grading = df[df["ID"] == subject].Grading.item()
+                    labels.append(0 if grading == 1 else 1)
+
+                skfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
+                dict_folds = {}
+                for fold, (train_idx, test_idx) in enumerate(skfold.split(subjects, labels)):
+                    train_subjects = [subjects[i] for i in train_idx]
+                    test_subjects = [subjects[i] for i in test_idx]
+
+                    dict_folds[fold] = {"train_subjects": train_subjects,
+                                        "test_subjects": test_subjects}
+
+                torch.save(dict_folds, save_path)
+                print("CV Splits saved successfully!")
+            
+            else:
+                print("CV Splits already exist.")
+        
+        case _:
+            raise ValueError("Given task unkown!")

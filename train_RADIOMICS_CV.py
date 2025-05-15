@@ -9,6 +9,7 @@ from tqdm import tqdm
 import pandas as pd
 import numpy as np
 import mlflow
+import torch
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
@@ -141,13 +142,17 @@ def train_svm_rf(radiomics_csv_path, model_type="rf", score="roc_auc"):
     mlflow.log_param(f"{score}_score_mean", nested_score.mean())
     mlflow.log_param(f"{score}_score_std", nested_score.std())
 
-    for fold, (train_idx, test_idx) in enumerate(outer_cv.split(X, y)):
-        mlflow.log_param(f"fold_{fold}_train_idx", train_idx)
-        mlflow.log_param(f"fold_{fold}_test_idx", test_idx)
-        train_subjects = [subjects[i] for i in train_idx]
-        test_subjects = [subjects[i] for i in test_idx]
-        mlflow.log_param(f"fold_{fold}_train_subjects", train_subjects)
-        mlflow.log_param(f"fold_{fold}_test_subjects", test_subjects)
+    # sequence = radiomics_csv_path.split("/")[-1].split("_")[-3]
+
+    # for fold, (train_idx, test_idx) in enumerate(outer_cv.split(X, y)):
+    #     torch.save(train_idx, f"./data/sarcoma/fold{fold}_train_indices_{sequence}.pt")
+    #     torch.save(test_idx, f"./data/sarcoma/fold{fold}_test_indices_{sequence}.pt")
+    #     mlflow.log_param(f"fold_{fold}_train_idx", train_idx)
+    #     mlflow.log_param(f"fold_{fold}_test_idx", test_idx)
+    #     train_subjects = [subjects[i] for i in train_idx]
+    #     test_subjects = [subjects[i] for i in test_idx]
+    #     mlflow.log_param(f"fold_{fold}_train_subjects", train_subjects)
+    #     mlflow.log_param(f"fold_{fold}_test_subjects", test_subjects)
 
 if __name__ == "__main__":
     

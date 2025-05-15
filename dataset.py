@@ -180,13 +180,14 @@ def get_data(datset_name: str, n_views: int, dino_size: str):
 def get_data_dicts(task: str) -> tuple[list[str], list[int]]:
 
     if task == "sarcoma_t1_grading_binary":
-        images = sorted(glob("./data/sarcoma/*/T1/*.nii.gz"))
-        images = [img for img in images if not "label" in img]
+        images = glob("./data/sarcoma/*/T1/*.nii.gz")
+        images = sorted([img for img in images if not "label" in img])
 
-        masks = sorted(glob("./data/sarcoma/*/T1/*.nii.gz"))
-        masks = [mask for mask in masks if "label" in mask]        
+        masks = glob("./data/sarcoma/*/T1/*.nii.gz")
+        masks = sorted([mask for mask in masks if "label" in mask])        
         
         labels = []
+        subjects = []
         df = pd.read_csv('./data/sarcoma/patient_metadata.csv')
         for img in images:
             img = img.split("/")[-1].split(".")[0]            
@@ -194,13 +195,14 @@ def get_data_dicts(task: str) -> tuple[list[str], list[int]]:
             grading = df[df["ID"] == patient_id].Grading.item()
             grading = 0 if grading == 1 else 1            
             labels.append(grading)
+            subjects.append(patient_id)
 
         data_dicts = [{"image": img, "mask": mask, "label": label} for img, mask, label in zip(images, masks, labels)]
     
     else:
         raise ValueError(f"Unknown task: {task}")
     
-    return data_dicts, labels
+    return data_dicts, labels, subjects
 
 
 def split_dataset(images: list[str], labels: list[int], val_size: float = 0.15, test_size: float = 0.15, seed: int = 42):
