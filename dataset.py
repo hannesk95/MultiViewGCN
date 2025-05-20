@@ -95,23 +95,23 @@ from sklearn.model_selection import train_test_split
 
 #         return data, label
 
-class SarcomaDatasetCV(Dataset):
-    def __init__(self, data, labels):
-        self.data = data
-        self.labels = labels
+# class SarcomaDatasetCV(Dataset):
+#     def __init__(self, data, labels):
+#         self.data = data
+#         self.labels = labels
 
-    def __len__(self):
-        return len(self.data)
+#     def __len__(self):
+#         return len(self.data)
 
-    def __getitem__(self, idx):
-        sample = self.data[idx]
-        label = self.labels[idx]
+#     def __getitem__(self, idx):
+#         sample = self.data[idx]
+#         label = self.labels[idx]
 
-        if isinstance(sample, str):
-            sample = torch.load(sample, weights_only=True)
-            # sample = sample.repeat(3, 1, 1)
+#         if isinstance(sample, str):
+#             sample = torch.load(sample, weights_only=True)
+#             # sample = sample.repeat(3, 1, 1)
 
-        return sample, label
+#         return sample, label
     
 class GNNDataset(Dataset):
     def __init__(self, data: list):
