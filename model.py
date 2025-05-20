@@ -559,7 +559,6 @@ class GNN(torch.nn.Module):
 
         return x
 
-
 class MLP(torch.nn.Module):
     def __init__(self, input_dim: int = 384, num_classes: int = 2, aggregation: str = "mean", n_views = None):       
         super(MLP, self).__init__()
