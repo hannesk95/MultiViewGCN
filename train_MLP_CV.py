@@ -88,7 +88,7 @@ def main(fold, architecture, task):
         match task:
             case "sarcoma_t1_grading_binary":
 
-                data = [file for file in glob(f"./data/sarcoma/*/T1/*graph-fibonacci_views{VIEWS}*.pt")]
+                # data = [file for file in glob(f"./data/sarcoma/*/T1/*graph-fibonacci_views{VIEWS}*.pt")]
 
                 train_data = [file for file in data if any(subject in file for subject in train_subjects)]
                 test_data = [file for file in data if any(subject in file for subject in test_subjects)]
@@ -98,7 +98,7 @@ def main(fold, architecture, task):
 
             case "sarcoma_t2_grading_binary":
 
-                data = [file for file in glob(f"./data/sarcoma/*/T2/*graph-fibonacci_views{VIEWS}*.pt")]
+                # data = [file for file in glob(f"./data/sarcoma/*/T2/*graph-fibonacci_views{VIEWS}*.pt")]
 
                 train_data = [file for file in data if any(subject in file for subject in train_subjects)]
                 test_data = [file for file in data if any(subject in file for subject in test_subjects)]
@@ -121,8 +121,6 @@ def main(fold, architecture, task):
         test_loader = DataLoader(test_data, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
 
         # Define the model, loss function, and optimizer
-        # model = CNN(architecture=ARCHITECTURE, pretrained=PRETRAINED).to(device)
-        # model = GNN(architecture=architecture, hierarchical_readout=True).to(device)
         model = MLP(num_classes=2, aggregation="mean", n_views=VIEWS).to(device)
         pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"Number of trainable parameters: {pytorch_total_params}")
