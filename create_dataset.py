@@ -807,7 +807,7 @@ def main(args: argparse.Namespace):
 if __name__ == "__main__":    
 
     for dataset in ["sarcoma_t1", "sarcoma_t2"]:
-        for views in [20]:
+        for views in [8, 12, 16, 24]:
             
             parser = argparse.ArgumentParser()
             parser.add_argument("--dataset", default="sarcoma_t1", help="Name of dataset to be processed.", type=Path,
