@@ -112,6 +112,38 @@ class SarcomaDatasetCV(Dataset):
             # sample = sample.repeat(3, 1, 1)
 
         return sample, label
+    
+class GNNDataset(Dataset):
+    def __init__(self, data: list):
+        self.data = data
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        sample = self.data[idx]        
+        sample = torch.load(sample, weights_only=False)            
+
+        return sample
+    
+class MLPDataset(Dataset):
+    def __init__(self, data: list):
+        self.data = data
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        sample = self.data[idx]        
+        sample = torch.load(sample, weights_only=False)  
+        
+        x = sample.x
+        x = x.to(torch.float32)       
+
+        y = sample.label
+        y = y.to(torch.long)
+
+        return x, y
 
 def get_data(datset_name: str, n_views: int, dino_size: str):
 

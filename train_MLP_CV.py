@@ -1,28 +1,24 @@
 import torch
 import mlflow
 import numpy as np
-from model import CNN, GNN
+from model import MLP
 from torch.amp import GradScaler
 from torch import autocast
 import os
-from monai.transforms import (
-    Compose, LoadImaged, EnsureChannelFirstd,
-    NormalizeIntensityd, CropForegroundd,
-    Orientationd, Spacingd, ToTensord, Lambdad, DivisiblePadd
-)
+
 # from monai.data import PersistentDataset, DataLoader
-from torch_geometric.data import DataLoader
-from monai.data import pad_list_data_collate
+# from torch_geometric.data import DataLoader
+from torch.utils.data import DataLoader
 from sklearn.utils.class_weight import compute_class_weight
 from sklearn.metrics import balanced_accuracy_score, matthews_corrcoef, roc_auc_score, f1_score
 from utils import seed_everything, save_conda_yaml
 from glob import glob
 from utils import create_cv_splits
-from dataset import GNNDataset
+from dataset import MLPDataset
 
 EPOCHS = 300
 BATCH_SIZE = 16
-ARCHITECTURE = "GAT"
+ARCHITECTURE = "MLP"
 WARMUP_EPOCHS = 100
 INITIAL_LR = 0.0
 TARGET_LR = 0.001
@@ -92,23 +88,23 @@ def main(fold, architecture, task):
         match task:
             case "sarcoma_t1_grading_binary":
 
-                data = [file for file in glob(f"./data/sarcoma/*/T1/*edge_attr_views{VIEWS}*.pt")]
+                data = [file for file in glob(f"./data/sarcoma/*/T1/*graph-fibonacci_views{VIEWS}*.pt")]
 
                 train_data = [file for file in data if any(subject in file for subject in train_subjects)]
                 test_data = [file for file in data if any(subject in file for subject in test_subjects)]
         
-                train_val_data = GNNDataset(train_data)
-                test_data = GNNDataset(test_data)                
+                train_val_data = MLPDataset(train_data)
+                test_data = MLPDataset(test_data)                
 
             case "sarcoma_t2_grading_binary":
 
-                data = [file for file in glob(f"./data/sarcoma/*/T2/*edge_attr_views{VIEWS}*.pt")]
+                data = [file for file in glob(f"./data/sarcoma/*/T2/*graph-fibonacci_views{VIEWS}*.pt")]
 
                 train_data = [file for file in data if any(subject in file for subject in train_subjects)]
                 test_data = [file for file in data if any(subject in file for subject in test_subjects)]
         
-                train_val_data = GNNDataset(train_data)
-                test_data = GNNDataset(test_data)
+                train_val_data = MLPDataset(train_data)
+                test_data = MLPDataset(test_data)
 
         # Further split train_val into training and validation (80/20 split)
         train_size = int(0.8 * len(train_val_data))
@@ -126,7 +122,8 @@ def main(fold, architecture, task):
 
         # Define the model, loss function, and optimizer
         # model = CNN(architecture=ARCHITECTURE, pretrained=PRETRAINED).to(device)
-        model = GNN(architecture=architecture, hierarchical_readout=True).to(device)
+        # model = GNN(architecture=architecture, hierarchical_readout=True).to(device)
+        model = MLP(num_classes=2, aggregation="mean", n_views=VIEWS).to(device)
         pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"Number of trainable parameters: {pytorch_total_params}")
         mlflow.log_param("num_trainable_params", pytorch_total_params)  
@@ -164,14 +161,17 @@ def main(fold, architecture, task):
             train_true_list = []
             train_pred_list = []
             train_score_list = []
-            for batch_data in train_loader:
+            for (inputs, labels) in train_loader:
                 
-                batch_data = batch_data.to(device)
+                #  = batch_data
+                inputs = inputs.to(device)
+                labels = labels.to(device)
+                
                 optimizer.zero_grad()            
 
                 with autocast(device_type='cuda', dtype=torch.float32):
-                    output = model(batch_data)
-                    loss = loss_fn(output, batch_data.label)
+                    output = model(inputs)
+                    loss = loss_fn(output, labels)
 
                 scaler.scale(loss).backward()            
                 scaler.step(optimizer)            
@@ -179,7 +179,7 @@ def main(fold, architecture, task):
 
                 train_loss_list.append(loss.item())
                 train_pred = torch.argmax(output, dim=1)
-                train_true_list.append(batch_data.label.cpu().numpy())
+                train_true_list.append(labels.cpu().numpy())
                 train_pred_list.append(train_pred.cpu().numpy())
                 train_score_list.append(output[:,1].detach().cpu().numpy())                  
 
@@ -199,17 +199,19 @@ def main(fold, architecture, task):
             val_pred_list = []
             val_score_list = []
             with torch.no_grad():           
-                for val_data in val_loader:
-                    val_data = val_data.to(device)
+                for (inputs, labels) in val_loader:
+                    
+                    inputs = inputs.to(device)
+                    labels = labels.to(device)
 
-                    val_output = model(val_data)
-                    loss = loss_fn(val_output, val_data.label)
+                    val_output = model(inputs)
+                    val_loss = loss_fn(val_output, labels)
 
                     val_output = val_output.detach().cpu()
 
-                    val_loss_list.append(loss.item())
+                    val_loss_list.append(val_loss.item())
                     val_pred = torch.argmax(val_output, dim=1)
-                    val_true_list.append(val_data.label.cpu().numpy())
+                    val_true_list.append(labels.cpu().numpy())
                     val_pred_list.append(val_pred.cpu().numpy())
                     val_score_list.append(val_output[:,1].detach().cpu().numpy())
             val_loss = sum(val_loss_list) / len(val_loader)
@@ -311,16 +313,17 @@ def main(fold, architecture, task):
         test_pred_list = []
         test_score_list = []
         with torch.no_grad():           
-            for test_data in test_loader:
+            for (inputs, labels) in test_loader:
                 
-                test_data = test_data.to(device)
+                inputs = inputs.to(device)
+                labels = labels.to(device)
 
-                test_output = model(test_data)
-                loss = loss_fn(test_output, test_data.label)
+                test_output = model(inputs)
+                test_loss = loss_fn(test_output, labels)
 
-                test_loss_list.append(loss.item())
+                test_loss_list.append(test_loss.item())
                 test_pred = torch.argmax(test_output, dim=1)
-                test_true_list.append(test_data.label.cpu().numpy())
+                test_true_list.append(labels.cpu().numpy())
                 test_pred_list.append(test_pred.cpu().numpy())
                 test_score_list.append(test_output[:,1].detach().cpu().numpy())
 
@@ -351,7 +354,7 @@ def main(fold, architecture, task):
 if __name__ == "__main__":    
 
     for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
-        for architecture in ["GAT"]:
+        for architecture in ["MLP"]:
             for fold in range(FOLDS):    
                 mlflow.set_experiment(task+"_temp")
                 mlflow.start_run()    

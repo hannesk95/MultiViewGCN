@@ -65,7 +65,7 @@ def save_conda_yaml():
     return conda_yaml_path
 
 
-def create_cv_splits(task: str) -> None:
+def create_cv_splits(task: str, seed: int = 28) -> None:
 
     match task:
         case "sarcoma_t1_grading_binary":
@@ -86,10 +86,10 @@ def create_cv_splits(task: str) -> None:
                     grading = df[df["ID"] == subject].Grading.item()
                     labels.append(0 if grading == 1 else 1)
 
-                skfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+                skfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
 
                 dict_folds = {}
-                for fold, (train_idx, test_idx) in enumerate(skfold.split(subjects, labels)):
+                for fold, (train_idx, test_idx) in enumerate(skfold.split(np.zeros((len(labels))), labels)):
                     train_subjects = [subjects[i] for i in train_idx]
                     train_labels = [labels[i] for i in train_idx]
                     test_subjects = [subjects[i] for i in test_idx]
@@ -126,7 +126,7 @@ def create_cv_splits(task: str) -> None:
                     grading = df[df["ID"] == subject].Grading.item()
                     labels.append(0 if grading == 1 else 1)
 
-                skfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+                skfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
 
                 dict_folds = {}
                 for fold, (train_idx, test_idx) in enumerate(skfold.split(subjects, labels)):

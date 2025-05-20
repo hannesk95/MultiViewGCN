@@ -19,30 +19,42 @@ from glob import glob
 from utils import create_cv_splits
 
 EPOCHS = 300
-BATCH_SIZE = 2
-ARCHITECTURE = "I3D"
-DEPTH = 50
+# BATCH_SIZE = 2
+# ARCHITECTURE = "I3D"
+# DEPTH = 50
 PRETRAINED = True
 WARMUP_EPOCHS = 100
 INITIAL_LR = 0.0
 TARGET_LR = 0.001
 SEED = 42
-FOLDS = 5
+# FOLDS = 5
 PRECISION = torch.float16
+DATA_CACHE_DIR = "./dataset_cache_dir"
 
 def main(fold, architecture, task):
 
     ARCHITECTURE = architecture
     if ARCHITECTURE == "I3D-DenseNet121":
-        BATCH_SIZE = 4
+        BATCH_SIZE = 2
+        PRECISION = torch.float16
     elif ARCHITECTURE == "I3D-ResNet50":
         BATCH_SIZE = 8
+        PRECISION = torch.float16
     elif ARCHITECTURE == "ModelsGenesis":
         BATCH_SIZE = 2
-    elif ARCHITECTURE == "ResNet":
+        PRECISION = torch.float16
+    elif ARCHITECTURE == "M3D-ResNet50":
         BATCH_SIZE = 8
-        if DEPTH == 50:
-            PRECISION = torch.float32
+        PRECISION = torch.float32
+    elif ARCHITECTURE == "M3D-ResNet34":
+        BATCH_SIZE = 8
+        PRECISION = torch.float16
+    elif ARCHITECTURE == "M3D-ResNet18":
+        BATCH_SIZE = 8
+        PRECISION = torch.float16
+    elif ARCHITECTURE == "M3D-ResNet10":
+        BATCH_SIZE = 8
+        PRECISION = torch.float16
     
     # ----------------------------
     # Miscellaneous stuff
@@ -57,7 +69,7 @@ def main(fold, architecture, task):
     mlflow.log_param("epochs", EPOCHS)
     mlflow.log_param("batch_size", BATCH_SIZE)
     mlflow.log_param("architecture", ARCHITECTURE)
-    mlflow.log_param("depth", DEPTH)
+    # mlflow.log_param("depth", DEPTH)
     mlflow.log_param("pretrained", PRETRAINED)
     mlflow.log_param("seed", SEED)
     mlflow.log_param("warmup_epochs", WARMUP_EPOCHS)
@@ -85,23 +97,39 @@ def main(fold, architecture, task):
     # Define the transforms
     # ----------------------------
 
-    transforms = Compose([
-        LoadImaged(keys=["image", "mask"]),
-        EnsureChannelFirstd(keys=["image", "mask"]),        
-        Orientationd(keys=["image", "mask"], axcodes="RAS"),
-        Spacingd(keys=["image", "mask"], pixdim=(1.0, 1.0, 1.0), mode=("bilinear", "nearest")),
-        NormalizeIntensityd(keys=["image"], nonzero=True),
-        CropForegroundd(keys=["image", "mask"], source_key="mask", select_fn=lambda x: x > 0),      
-        DivisiblePadd(keys=["image", "mask"], k=16),        
-        Lambdad(keys="label", func=lambda x: torch.tensor(x).long()),
-        ToTensord(keys=["image", "mask", "label"]),
-    ])
+    if architecture == "ModelsGenesis":
+
+        transforms = Compose([
+            LoadImaged(keys=["image", "mask"]),
+            EnsureChannelFirstd(keys=["image", "mask"]),        
+            Orientationd(keys=["image", "mask"], axcodes="RAS"),
+            Spacingd(keys=["image", "mask"], pixdim=(1.0, 1.0, 1.0), mode=("bilinear", "nearest")),
+            NormalizeIntensityd(keys=["image"], nonzero=True),
+            CropForegroundd(keys=["image", "mask"], source_key="mask", select_fn=lambda x: x > 0),      
+            DivisiblePadd(keys=["image", "mask"], k=16),        
+            Lambdad(keys="label", func=lambda x: torch.tensor(x).long()),
+            ToTensord(keys=["image", "mask", "label"]),
+        ])
+    
+    else:
+        transforms = Compose([
+            LoadImaged(keys=["image", "mask"]),
+            EnsureChannelFirstd(keys=["image", "mask"]),        
+            Orientationd(keys=["image", "mask"], axcodes="RAS"),
+            Spacingd(keys=["image", "mask"], pixdim=(1.0, 1.0, 1.0), mode=("bilinear", "nearest")),
+            NormalizeIntensityd(keys=["image"], nonzero=True),
+            CropForegroundd(keys=["image", "mask"], source_key="mask", select_fn=lambda x: x > 0),    
+            DivisiblePadd(keys=["image", "mask"], k=16),     
+            Lambdad(keys="label", func=lambda x: torch.tensor(x).long()),
+            ToTensord(keys=["image", "mask", "label"]),
+        ])
+
 
     # ----------------------------
     # Start Cross Validation
     # ----------------------------
 
-    for current_fold in range(FOLDS):
+    for current_fold in range(5):
 
         if current_fold != fold:
             continue
@@ -133,8 +161,8 @@ def main(fold, architecture, task):
                 train_data_dicts = [{"image": img, "mask": mask, "label": label} for img, mask, label in zip(train_imgs, train_segs, train_labels)]
                 test_data_dicts = [{"image": img, "mask": mask, "label": label} for img, mask, label in zip(test_imgs, test_segs, test_labels)]
 
-                train_val_data = PersistentDataset(data=train_data_dicts, transform=transforms, cache_dir="./dataset_cache_dir") 
-                test_data = PersistentDataset(data=test_data_dicts, transform=transforms, cache_dir="./dataset_cache_dir") 
+                train_val_data = PersistentDataset(data=train_data_dicts, transform=transforms, cache_dir=DATA_CACHE_DIR) 
+                test_data = PersistentDataset(data=test_data_dicts, transform=transforms, cache_dir=DATA_CACHE_DIR) 
 
             case "sarcoma_t2_grading_binary":
                 imgs = [file for file in glob("./data/sarcoma/*/T2/*nii.gz")]
@@ -151,8 +179,8 @@ def main(fold, architecture, task):
                 train_data_dicts = [{"image": img, "mask": mask, "label": label} for img, mask, label in zip(train_imgs, train_segs, train_labels)]
                 test_data_dicts = [{"image": img, "mask": mask, "label": label} for img, mask, label in zip(test_imgs, test_segs, test_labels)]
 
-                train_val_data = PersistentDataset(data=train_data_dicts, transform=transforms, cache_dir="./dataset_cache_dir") 
-                test_data = PersistentDataset(data=test_data_dicts, transform=transforms, cache_dir="./dataset_cache_dir") 
+                train_val_data = PersistentDataset(data=train_data_dicts, transform=transforms, cache_dir=DATA_CACHE_DIR) 
+                test_data = PersistentDataset(data=test_data_dicts, transform=transforms, cache_dir=DATA_CACHE_DIR) 
 
         # Further split train_val into training and validation (80/20 split)
         train_size = int(0.8 * len(train_val_data))
@@ -169,7 +197,7 @@ def main(fold, architecture, task):
         test_loader = DataLoader(dataset=test_data, batch_size=BATCH_SIZE, shuffle=False, num_workers=4, pin_memory=torch.cuda.is_available(), collate_fn=pad_list_data_collate, drop_last=True)
 
         # Define the model, loss function, and optimizer
-        model = CNN(architecture=ARCHITECTURE, depth=DEPTH, pretrained=PRETRAINED).to(device)
+        model = CNN(architecture=ARCHITECTURE, pretrained=PRETRAINED).to(device)
         pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"Number of trainable parameters: {pytorch_total_params}")
         mlflow.log_param("num_trainable_params", pytorch_total_params)  
@@ -402,13 +430,12 @@ def main(fold, architecture, task):
         os.remove("model_mcc.pth")
         os.remove("conda.yaml")     
 
-if __name__ == "__main__":
+if __name__ == "__main__":    
 
-    task = "sarcoma_t2_grading_binary"
-
-    for architecture in ["ResNet"]:
-        for fold in range(FOLDS):    
-            mlflow.set_experiment(task)
-            mlflow.start_run()    
-            main(fold, architecture, task)
-            mlflow.end_run()
+    for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
+        for architecture in ["I3D-DenseNet121"]:#, "I3D-ResNet50", "M3D-ResNet10", "M3D-ResNet18", "M3D-ResNet34", "M3D-ResNet50", "ModelsGenesis"]:
+            for fold in range(5):    
+                mlflow.set_experiment(task)
+                mlflow.start_run()    
+                main(fold, architecture, task)
+                mlflow.end_run()
