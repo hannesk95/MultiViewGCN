@@ -723,8 +723,10 @@ def main(args: argparse.Namespace):
             if max_dimension > 300:
                 print(f"\n [INFO] Very big ROI ({max_dimension}): {seg_list[i]}")                
 
-            target_size_iso_crop = int(max_dimension*1.5)
-            target_size_iso_pad = int(target_size_iso_crop*1.5)
+            # target_size_iso_crop = int(max_dimension*1.5)
+            target_size_iso_crop = max_dimension
+            # target_size_iso_pad = int(target_size_iso_crop*1.5)
+            target_size_iso_pad = int(target_size_iso_crop*np.sqrt(2))
 
             subject_iso_crop = tio.CropOrPad(target_shape=target_size_iso_crop, mask_name="seg")(subject_iso_resampled)
             subject_iso_pad = tio.CropOrPad(target_shape=target_size_iso_pad)(subject_iso_crop)
@@ -743,9 +745,9 @@ def main(args: argparse.Namespace):
 
             subject_iso_pad = tio.CropOrPad(target_shape=int(64*1.5))(subject)
 
-        if os.path.exists(save_path):
-            print(f"[INFO] File already exists: {save_path}")
-            continue
+        # if os.path.exists(save_path):
+        #     print(f"[INFO] File already exists: {save_path}")
+        #     continue
 
         img_arr = subject_iso_pad.img.numpy()[0]
         seg_arr = subject_iso_pad.seg.numpy()[0]
@@ -755,11 +757,11 @@ def main(args: argparse.Namespace):
                                                image_processor=processor, backbone=model, 
                                                patient_id=patient_id, dataset_name=dataset_name)
         outputs_list.append(encoding)
-        for rot_matrix in rot_matrices:
+        for rot_matrix in tqdm(rot_matrices):
             # img_arr_rotated = rotate_array_around_center(img_arr, rot_matrix, 1)
             img_arr_rotated = rotate_3d_tensor_around_center(torch.tensor(img_arr, dtype=torch.float32).cuda(), torch.tensor(rot_matrix, dtype=torch.float32).cuda(), order=1, device='cuda')
             # seg_arr_rotated = rotate_array_around_center(seg_arr, rot_matrix, 0)
-            seg_arr_rotated = rotate_3d_tensor_around_center(torch.tensor(seg_arr, dtype=torch.float32).cuda(), torch.tensor(rot_matrix, dtype=torch.float32).cuda(), order=1, device='cuda')
+            seg_arr_rotated = rotate_3d_tensor_around_center(torch.tensor(seg_arr, dtype=torch.float32).cuda(), torch.tensor(rot_matrix, dtype=torch.float32).cuda(), order=0, device='cuda')
 
             
             encoding = encode_largest_lesion_slice(volume=img_arr_rotated, mask=seg_arr_rotated, 
@@ -771,15 +773,15 @@ def main(args: argparse.Namespace):
         features = torch.concatenate(outputs_list, dim=0)        
         edge_index = to_undirected(graph_edge_index)
 
-        rot_matrices = [np.eye(3)] + rot_matrices
+        rot_matrices_temp = [np.eye(3)] + rot_matrices
 
         edge_attr = []
         for i in range(edge_index.shape[-1]):
             edge = edge_index[:, i]
             source = edge[0]
             target = edge[1]
-            source_rot_matrix = rot_matrices[source]
-            target_rot_matrix = rot_matrices[target]
+            source_rot_matrix = rot_matrices_temp[source]
+            target_rot_matrix = rot_matrices_temp[target]
             transition_matrix = target_rot_matrix @ source_rot_matrix.T
             edge_attr.append(torch.from_numpy(transition_matrix.flatten()))
         edge_attr = torch.stack(edge_attr, dim=0)
@@ -798,13 +800,14 @@ def main(args: argparse.Namespace):
         else:
             label = np.load(img_list[i].replace("image", "label")).item()
 
-        data = Data(x=features, edge_index=edge_index, edge_attr=edge_attr, adj_matrix=adjacency_matrix, label=torch.tensor(label))        
+        # data = Data(x=features, edge_index=edge_index, edge_attr=edge_attr, adj_matrix=adjacency_matrix, label=torch.tensor(label))        
+        data = Data(x=features, edge_index=edge_index, edge_attr=edge_attr, label=torch.tensor(label))        
         torch.save(data, save_path)
      
 if __name__ == "__main__":    
 
-    for dataset in ["sarcoma_t1", "sarcoma_t2"]:#, "sarcoma_t2"]:
-        for views in [8, 12, 16, 20]:
+    for dataset in ["sarcoma_t1", "sarcoma_t2"]:
+        for views in [20]:
             
             parser = argparse.ArgumentParser()
             parser.add_argument("--dataset", default="sarcoma_t1", help="Name of dataset to be processed.", type=Path,
