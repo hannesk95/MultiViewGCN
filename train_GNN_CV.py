@@ -20,6 +20,7 @@ from glob import glob
 from utils import create_cv_splits
 from dataset import GNNDataset
 import argparse
+import uuid
 
 EPOCHS = 300
 BATCH_SIZE = 16
@@ -41,6 +42,8 @@ def main(fold, architecture, task, views, readout, aggregation, hierarchical_rea
     READOUT = readout
     AGGREGATION = aggregation
     HIERARCHICAL_READOUT = hierarchical_readout
+
+    identifier = str(uuid.uuid4())
     
     # ----------------------------
     # Miscellaneous stuff
@@ -247,46 +250,46 @@ def main(fold, architecture, task, views, readout, aggregation, hierarchical_rea
                 lr = optimizer.param_groups[0]['lr']
 
             if epoch == 0:
-                torch.save(model.state_dict(), "model_mcc.pth")
-                mlflow.log_artifact("model_mcc.pth")
-                torch.save(model.state_dict(), "model_auc.pth")
-                mlflow.log_artifact("model_auc.pth")
-                torch.save(model.state_dict(), "model_bacc.pth")
-                mlflow.log_artifact("model_bacc.pth")
-                torch.save(model.state_dict(), "model_f1.pth")
-                mlflow.log_artifact("model_f1.pth")
-                torch.save(model.state_dict(), "model_loss.pth")
-                mlflow.log_artifact("model_loss.pth")
+                torch.save(model.state_dict(), f"model_mcc_{identifier}.pth")
+                mlflow.log_artifact(f"model_mcc_{identifier}.pth")
+                torch.save(model.state_dict(), f"model_auc_{identifier}.pth")
+                mlflow.log_artifact(f"model_auc_{identifier}.pth")
+                torch.save(model.state_dict(), f"model_bacc_{identifier}.pth")
+                mlflow.log_artifact(f"model_bacc_{identifier}.pth")
+                torch.save(model.state_dict(), f"model_f1_{identifier}.pth")
+                mlflow.log_artifact(f"model_f1_{identifier}.pth")
+                torch.save(model.state_dict(), f"model_loss_{identifier}.pth")
+                mlflow.log_artifact(f"model_loss_{identifier}.pth")
             
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 best_val_loss_epoch = epoch
-                torch.save(model.state_dict(), "model_loss.pth")
-                mlflow.log_artifact("model_loss.pth")
+                torch.save(model.state_dict(), f"model_loss_{identifier}.pth")
+                mlflow.log_artifact(f"model_loss_{identifier}.pth")
                 print(f"Best model saved at epoch {epoch+1} with loss {best_val_loss:.4f}")
             if val_f1 > best_val_f1:
                 best_val_f1 = val_f1
                 best_val_f1_epoch = epoch
-                torch.save(model.state_dict(), "model_f1.pth")
-                mlflow.log_artifact("model_f1.pth")
+                torch.save(model.state_dict(), f"model_f1_{identifier}.pth")
+                mlflow.log_artifact(f"model_f1_{identifier}.pth")
                 print(f"Best model saved at epoch {epoch+1} with F1 {best_val_f1:.4f}")
             if val_mcc > best_val_mcc:
                 best_val_mcc = val_mcc
                 best_val_mcc_epoch = epoch
-                torch.save(model.state_dict(), "model_mcc.pth")
-                mlflow.log_artifact("model_mcc.pth")
+                torch.save(model.state_dict(), f"model_mcc_{identifier}.pth")
+                mlflow.log_artifact(f"model_mcc_{identifier}.pth")
                 print(f"Best model saved at epoch {epoch+1} with MCC {best_val_mcc:.4f}")
             if val_auc > best_val_auc:
                 best_val_auc = val_auc
                 best_val_auc_epoch = epoch
-                torch.save(model.state_dict(), "model_auc.pth")
-                mlflow.log_artifact("model_auc.pth")
+                torch.save(model.state_dict(), f"model_auc_{identifier}.pth")
+                mlflow.log_artifact(f"model_auc_{identifier}.pth")
                 print(f"Best model saved at epoch {epoch+1} with AUC {best_val_auc:.4f}")
             if val_bacc > best_val_bacc:
                 best_val_bacc = val_bacc
                 best_val_bacc_epoch = epoch
-                torch.save(model.state_dict(), "model_bacc.pth")
-                mlflow.log_artifact("model_bacc.pth")
+                torch.save(model.state_dict(), f"model_bacc_{identifier}.pth")
+                mlflow.log_artifact(f"model_bacc_{identifier}.pth")
                 print(f"Best model saved at epoch {epoch+1} with BACC {best_val_bacc:.4f}")       
             
             mlflow.log_metric("train_loss", train_loss, step=epoch)
@@ -315,7 +318,7 @@ def main(fold, architecture, task, views, readout, aggregation, hierarchical_rea
         mlflow.log_param("best_val_bacc_epoch", best_val_bacc_epoch)        
 
         # Load the best model for evaluation  
-        model.load_state_dict(torch.load("model_auc.pth"))
+        model.load_state_dict(torch.load(f"model_auc_{identifier}.pth"))
 
         model.eval()
         test_loss_list = []
@@ -353,11 +356,11 @@ def main(fold, architecture, task, views, readout, aggregation, hierarchical_rea
         mlflow.log_metric("test_auc", test_auc)
         mlflow.log_metric("test_bacc", test_bacc)   
 
-        os.remove("model_auc.pth")
-        os.remove("model_bacc.pth")
-        os.remove("model_f1.pth")
-        os.remove("model_loss.pth")
-        os.remove("model_mcc.pth")
+        os.remove(f"model_auc_{identifier}.pth")
+        os.remove(f"model_bacc_{identifier}.pth")
+        os.remove(f"model_f1_{identifier}.pth")
+        os.remove(f"model_loss_{identifier}.pth")
+        os.remove(f"model_mcc_{identifier}.pth")
         os.remove("conda.yaml")     
 
 if __name__ == "__main__":    
