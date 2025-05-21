@@ -29,10 +29,17 @@ TARGET_LR = 0.001
 SEED = 42
 FOLDS = 5
 VIEWS = 20
+READOUT = "mean"
+AGGREGATION = "mean"
+HIERARCHICAL_READOUT = True
 
-def main(fold, architecture, task):
+def main(fold, architecture, task, views, readout, aggregation, hierarchical_readout):
 
     ARCHITECTURE = architecture
+    VIEWS = views
+    READOUT = readout
+    AGGREGATION = aggregation
+    HIERARCHICAL_READOUT = hierarchical_readout
     
     # ----------------------------
     # Miscellaneous stuff
@@ -52,6 +59,10 @@ def main(fold, architecture, task):
     mlflow.log_param("initial_lr", INITIAL_LR)
     mlflow.log_param("target_lr", TARGET_LR)
     mlflow.log_param("fold", fold)
+    mlflow.log_param("views", VIEWS)
+    mlflow.log_param("readout", READOUT)
+    mlflow.log_param("aggregation", AGGREGATION)
+    mlflow.log_param("hierarchical_readout", HIERARCHICAL_READOUT)
     conda_yaml_path = save_conda_yaml()
     mlflow.log_artifact(conda_yaml_path)   
 
@@ -126,7 +137,7 @@ def main(fold, architecture, task):
 
         # Define the model, loss function, and optimizer
         # model = CNN(architecture=ARCHITECTURE, pretrained=PRETRAINED).to(device)
-        model = GNN(architecture=architecture, hierarchical_readout=True).to(device)
+        model = GNN(architecture=ARCHITECTURE, hierarchical_readout=HIERARCHICAL_READOUT, aggregate=AGGREGATION, readout=READOUT).to(device)
         pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"Number of trainable parameters: {pytorch_total_params}")
         mlflow.log_param("num_trainable_params", pytorch_total_params)  
@@ -351,9 +362,13 @@ def main(fold, architecture, task):
 if __name__ == "__main__":    
 
     for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
-        for architecture in ["GAT"]:
-            for fold in range(FOLDS):    
-                mlflow.set_experiment(task+"_temp")
-                mlflow.start_run()    
-                main(fold, architecture, task)
-                mlflow.end_run()
+        for architecture in ["GAT", "GCN", "SAGE"]:
+            for views in [8, 12, 16, 20, 24]:
+                for readout in ["mean", "max", "sum"]:
+                    for aggregation in ["mean", "max", "sum"]:
+                         for hierarchical_readout in [True, False]:
+                            for fold in range(FOLDS):    
+                                mlflow.set_experiment(task)
+                                mlflow.start_run()    
+                                main(fold, architecture, task, views, readout, aggregation, hierarchical_readout)
+                                mlflow.end_run()

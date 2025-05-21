@@ -24,11 +24,14 @@ INITIAL_LR = 0.0
 TARGET_LR = 0.001
 SEED = 42
 FOLDS = 5
+AGGREGATION = "mean"
 VIEWS = 20
 
-def main(fold, architecture, task):
+def main(fold, architecture, task, views, aggregation):
 
     ARCHITECTURE = architecture
+    VIEWS = views
+    AGGREGATION = aggregation
     
     # ----------------------------
     # Miscellaneous stuff
@@ -48,6 +51,8 @@ def main(fold, architecture, task):
     mlflow.log_param("initial_lr", INITIAL_LR)
     mlflow.log_param("target_lr", TARGET_LR)
     mlflow.log_param("fold", fold)
+    mlflow.log_param("views", VIEWS)
+    mlflow.log_param("aggregation", AGGREGATION)
     conda_yaml_path = save_conda_yaml()
     mlflow.log_artifact(conda_yaml_path)   
 
@@ -88,7 +93,7 @@ def main(fold, architecture, task):
         match task:
             case "sarcoma_t1_grading_binary":
 
-                # data = [file for file in glob(f"./data/sarcoma/*/T1/*graph-fibonacci_views{VIEWS}*.pt")]
+                data = [file for file in glob(f"./data/sarcoma/*/T1/*graph-fibonacci-edge_attr_views{VIEWS}*.pt")]
 
                 train_data = [file for file in data if any(subject in file for subject in train_subjects)]
                 test_data = [file for file in data if any(subject in file for subject in test_subjects)]
@@ -98,7 +103,7 @@ def main(fold, architecture, task):
 
             case "sarcoma_t2_grading_binary":
 
-                # data = [file for file in glob(f"./data/sarcoma/*/T2/*graph-fibonacci_views{VIEWS}*.pt")]
+                data = [file for file in glob(f"./data/sarcoma/*/T2/*graph-fibonacci-edge_attr_views{VIEWS}*.pt")]
 
                 train_data = [file for file in data if any(subject in file for subject in train_subjects)]
                 test_data = [file for file in data if any(subject in file for subject in test_subjects)]
@@ -121,7 +126,7 @@ def main(fold, architecture, task):
         test_loader = DataLoader(test_data, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
 
         # Define the model, loss function, and optimizer
-        model = MLP(num_classes=2, aggregation="mean", n_views=VIEWS).to(device)
+        model = MLP(num_classes=2, aggregation=AGGREGATION, n_views=VIEWS).to(device)
         pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"Number of trainable parameters: {pytorch_total_params}")
         mlflow.log_param("num_trainable_params", pytorch_total_params)  
@@ -351,10 +356,12 @@ def main(fold, architecture, task):
 
 if __name__ == "__main__":    
 
-    for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
-        for architecture in ["MLP"]:
-            for fold in range(FOLDS):    
-                mlflow.set_experiment(task+"_temp")
-                mlflow.start_run()    
-                main(fold, architecture, task)
-                mlflow.end_run()
+    for views in [8, 12, 16, 20, 24]:
+        for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
+            for architecture in ["MLP"]:
+                for aggregation in ["sum", "mean", "max", "MLP"]:
+                    for fold in range(FOLDS):    
+                        mlflow.set_experiment(task)
+                        mlflow.start_run()    
+                        main(fold, architecture, task, views, aggregation)
+                        mlflow.end_run()

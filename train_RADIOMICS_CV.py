@@ -85,7 +85,7 @@ def extract_radiomics_features(task, params_path=None):
         print(f"\nRadiomics feature matrix saved to: {output_csv_path}")
 
 
-def train_classifier(task, model_type, score="roc_auc"):
+def train_classifier(task, model_type, score, current_fold):
 
     radiomics_csv_path = f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/radiomics_cache_dir/radiomics_features_{task}.csv"
     df = pd.read_csv(radiomics_csv_path)
@@ -112,6 +112,9 @@ def train_classifier(task, model_type, score="roc_auc"):
     bacc_list = list()
 
     for fold in range(5):
+
+        if fold != current_fold:
+            continue
 
         print(f"Fold {fold}")   
 
@@ -182,7 +185,7 @@ def train_classifier(task, model_type, score="roc_auc"):
 
         # Log metrics to MLflow
         mlflow.log_metric("test_bacc", bacc)
-        mlflow.log_metric("test_auroc", auroc)   
+        mlflow.log_metric("test_auc", auroc)   
         mlflow.log_metric("test_mcc", mcc)
         mlflow.log_metric("test_f1", f1)
         mlflow.log_param("architecture", model_type)        
@@ -202,11 +205,12 @@ def train_classifier(task, model_type, score="roc_auc"):
 
 if __name__ == "__main__":
 
-    for task in ["sarcoma_t2_grading_binary", "sarcoma_t1_grading_binary"]:
+    for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
         for model in ["rf", "svm"]:
-            mlflow.set_experiment(task)
-            mlflow.start_run()            
-            extract_radiomics_features(task=task, params_path="./pyradiomics_mri_params.yaml")
-            train_classifier(task=task, model_type=model, score="roc_auc")
-            mlflow.end_run()
+            for fold in range(5):  
+                mlflow.set_experiment(task)
+                mlflow.start_run()            
+                extract_radiomics_features(task=task, params_path="./pyradiomics_mri_params.yaml")
+                train_classifier(task=task, model_type=model, score="roc_auc", current_fold=fold)
+                mlflow.end_run()
     
