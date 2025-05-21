@@ -67,8 +67,8 @@ def main(fold, architecture, task, views, readout, aggregation, hierarchical_rea
     mlflow.log_param("readout", READOUT)
     mlflow.log_param("aggregation", AGGREGATION)
     mlflow.log_param("hierarchical_readout", HIERARCHICAL_READOUT)
-    conda_yaml_path = save_conda_yaml()
-    mlflow.log_artifact(conda_yaml_path)   
+    # conda_yaml_path = save_conda_yaml()
+    # mlflow.log_artifact(conda_yaml_path)   
 
     # ----------------------------
     # Load data
