@@ -6,7 +6,7 @@ from torch_geometric.nn.models import GCN, MLP
 import torch.nn.functional as F
 from torch.nn import Linear, Dropout, BatchNorm1d
 from torch_geometric.nn.inits import uniform
-from _delete.model_paper import SimpleTanhAttn
+# from _delete.model_paper import SimpleTanhAttn
 from torch_geometric.utils import to_undirected
 import torch
 import torch.nn as nn
