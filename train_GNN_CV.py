@@ -75,9 +75,9 @@ def main(fold, architecture, task, views, readout, aggregation, hierarchical_rea
 
     match task:
         case "sarcoma_t1_grading_binary":
-            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/sarcoma_t1_grading_binary_folds.pt")
+            folds_dict = torch.load("./data/sarcoma/sarcoma_t1_grading_binary_folds.pt")
         case "sarcoma_t2_grading_binary":
-            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/sarcoma_t2_grading_binary_folds.pt")
+            folds_dict = torch.load("./data/sarcoma/sarcoma_t2_grading_binary_folds.pt")
         case _:
             raise ValueError(f"Given task '{task}' unkown!")
 
