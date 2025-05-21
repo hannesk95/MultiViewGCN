@@ -70,17 +70,17 @@ def create_cv_splits(task: str, seed: int = 28) -> None:
     match task:
         case "sarcoma_t1_grading_binary":
 
-            save_path = f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/{task}_folds.pt"
+            save_path = f"./data/sarcoma/{task}_folds.pt"
             if not os.path.exists(save_path):
 
-                files = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/*/T1/*.nii.gz"))
+                files = sorted(glob("./data/sarcoma/*/T1/*.nii.gz"))
                 files = [file for file in files if not "label" in file]
                 subjects = [file.split("/")[-1].replace(".nii.gz", "") for file in files]
                 subjects = [subject.replace("T1", "") for subject in subjects]
                 subjects = [subject.replace("_updated", "") for subject in subjects]
 
                 labels = []
-                df = pd.read_csv("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/patient_metadata.csv")
+                df = pd.read_csv("./data/sarcoma/patient_metadata.csv")
 
                 for subject in subjects:
                     grading = df[df["ID"] == subject].Grading.item()
@@ -108,10 +108,10 @@ def create_cv_splits(task: str, seed: int = 28) -> None:
         
         case "sarcoma_t2_grading_binary":
             
-            save_path = f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/{task}_folds.pt"
+            save_path = f"./data/sarcoma/{task}_folds.pt"
             if not os.path.exists(save_path):
 
-                files = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/*/T2/*.nii.gz"))
+                files = sorted(glob("./data/sarcoma/*/T2/*.nii.gz"))
                 files = [file for file in files if not "label" in file]
                 subjects = [file.split("/")[-1].replace(".nii.gz", "") for file in files]
                 subjects = [subject.replace("STIR", "") for subject in subjects]
@@ -120,7 +120,7 @@ def create_cv_splits(task: str, seed: int = 28) -> None:
                 subjects = [subject.replace("_sag", "") for subject in subjects]
 
                 labels = []
-                df = pd.read_csv("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/patient_metadata.csv")
+                df = pd.read_csv("./data/sarcoma/patient_metadata.csv")
 
                 for subject in subjects:
                     grading = df[df["ID"] == subject].Grading.item()
