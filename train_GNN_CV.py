@@ -19,6 +19,7 @@ from utils import seed_everything, save_conda_yaml
 from glob import glob
 from utils import create_cv_splits
 from dataset import GNNDataset
+import argparse
 
 EPOCHS = 300
 BATCH_SIZE = 16
@@ -361,14 +362,33 @@ def main(fold, architecture, task, views, readout, aggregation, hierarchical_rea
 
 if __name__ == "__main__":    
 
-    for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
-        for architecture in ["GAT", "GCN", "SAGE"]:
-            for views in [8, 12, 16, 20, 24]:
-                for readout in ["mean", "max", "sum"]:
-                    for aggregation in ["mean", "max", "sum"]:
-                         for hierarchical_readout in [True, False]:
-                            for fold in range(FOLDS):    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fold", type=int, default=-1, help="Fold number for cross-validation")
+    args = parser.parse_args()
+
+    if args.fold == -1:
+
+        for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
+            for architecture in ["GAT", "GCN", "SAGE"]:
+                for views in [8, 12, 16, 20, 24]:
+                    for readout in ["mean", "max", "sum"]:
+                        for aggregation in ["mean", "max", "sum"]:
+                            for hierarchical_readout in [True, False]:
+                                for fold in range(FOLDS):    
+                                    mlflow.set_experiment(task)
+                                    mlflow.start_run()    
+                                    main(fold, architecture, task, views, readout, aggregation, hierarchical_readout)
+                                    mlflow.end_run()
+
+    else:
+        for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
+            for architecture in ["GAT", "GCN", "SAGE"]:
+                for views in [8, 12, 16, 20, 24]:
+                    for readout in ["mean", "max", "sum"]:
+                        for aggregation in ["mean", "max", "sum"]:
+                            for hierarchical_readout in [True, False]:    
                                 mlflow.set_experiment(task)
                                 mlflow.start_run()    
-                                main(fold, architecture, task, views, readout, aggregation, hierarchical_readout)
+                                main(args.fold, architecture, task, views, readout, aggregation, hierarchical_readout)
                                 mlflow.end_run()
+
