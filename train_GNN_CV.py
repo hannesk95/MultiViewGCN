@@ -361,7 +361,7 @@ def main(fold, architecture, task, views, readout, aggregation, hierarchical_rea
         os.remove(f"model_f1_{identifier}.pth")
         os.remove(f"model_loss_{identifier}.pth")
         os.remove(f"model_mcc_{identifier}.pth")
-        os.remove("conda.yaml")     
+        # os.remove("conda.yaml")     
 
 if __name__ == "__main__":    
 
