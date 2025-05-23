@@ -26,6 +26,8 @@ from torch_geometric.nn import GINConv, GINEConv
 from torch.nn import Linear, ReLU, Sequential, LeakyReLU
 
 
+
+
 # class PyGModel(torch.nn.Module):
 #     def __init__(self, input_dim: int, hidden_dim: int = 32, pool = "mean", architecture = "GCN"):
 #         super(PyGModel, self).__init__()
@@ -573,7 +575,12 @@ class MLP(torch.nn.Module):
                     nn.Linear(self.n_views, 1),
                     nn.ReLU())                
 
-        self.linear = Linear(self.input_dim, num_classes)
+        # self.linear = Linear(self.input_dim, num_classes)
+        self.linear1 = Linear(self.input_dim, 32)
+        self.bn1 = BatchNorm1d(32)
+        self.linear2 = Linear(32, 32)
+        self.bn2 = BatchNorm1d(32)
+        self.linear3 = Linear(32, num_classes)
 
     def forward(self, x):
 
@@ -591,6 +598,11 @@ class MLP(torch.nn.Module):
                 x = self.aggregate(x)
                 x = x.squeeze(-1)
             
-        x = self.linear(x)
+        # x = self.linear(x)
+
+        x = F.relu(self.bn1(self.linear1(x)))
+        x = F.relu(self.bn2(self.linear2(x)))
+        x = self.linear3(x)
+
         return x        
     

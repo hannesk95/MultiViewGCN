@@ -359,9 +359,9 @@ if __name__ == "__main__":
     for views in [8, 12, 16, 20, 24]:
         for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
             for architecture in ["MLP"]:
-                for aggregation in ["sum", "mean", "max", "MLP"]:
+                for aggregation in ["mean", "max", "sum", "MLP"]:
                     for fold in range(FOLDS):    
-                        mlflow.set_experiment(task)
+                        mlflow.set_experiment(task+"_MLP")
                         mlflow.start_run()    
                         main(fold, architecture, task, views, aggregation)
                         mlflow.end_run()

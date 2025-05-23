@@ -208,7 +208,7 @@ if __name__ == "__main__":
     for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
         for model in ["rf", "svm"]:
             for fold in range(5):  
-                mlflow.set_experiment(task)
+                mlflow.set_experiment(task+"_RADIOMICS")
                 mlflow.start_run()            
                 extract_radiomics_features(task=task, params_path="./pyradiomics_mri_params.yaml")
                 train_classifier(task=task, model_type=model, score="roc_auc", current_fold=fold)

@@ -378,7 +378,7 @@ if __name__ == "__main__":
                         for aggregation in ["mean", "max", "sum"]:
                             for hierarchical_readout in [True, False]:
                                 for fold in range(FOLDS):    
-                                    mlflow.set_experiment(task)
+                                    mlflow.set_experiment(task+"_GNN")
                                     mlflow.start_run()    
                                     main(fold, architecture, task, views, readout, aggregation, hierarchical_readout)
                                     mlflow.end_run()
@@ -390,7 +390,7 @@ if __name__ == "__main__":
                     for readout in ["mean", "max", "sum"]:
                         for aggregation in ["mean", "max", "sum"]:
                             for hierarchical_readout in [True, False]:    
-                                mlflow.set_experiment(task)
+                                mlflow.set_experiment(task+"_GNN")
                                 mlflow.start_run()    
                                 main(args.fold, architecture, task, views, readout, aggregation, hierarchical_readout)
                                 mlflow.end_run()

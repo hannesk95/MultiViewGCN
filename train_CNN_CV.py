@@ -17,8 +17,10 @@ from sklearn.metrics import balanced_accuracy_score, matthews_corrcoef, roc_auc_
 from utils import seed_everything, save_conda_yaml
 from glob import glob
 from utils import create_cv_splits
+import argparse
+import uuid
 
-EPOCHS = 300
+EPOCHS = 3
 # BATCH_SIZE = 2
 # ARCHITECTURE = "I3D"
 # DEPTH = 50
@@ -33,9 +35,11 @@ DATA_CACHE_DIR = "./dataset_cache_dir"
 
 def main(fold, architecture, task):
 
+    identifier = str(uuid.uuid4())
+
     ARCHITECTURE = architecture
     if ARCHITECTURE == "I3D-DenseNet121":
-        BATCH_SIZE = 2
+        BATCH_SIZE = 4
         PRECISION = torch.float16
     elif ARCHITECTURE == "I3D-ResNet50":
         BATCH_SIZE = 8
@@ -84,45 +88,22 @@ def main(fold, architecture, task):
     # ----------------------------
 
     create_cv_splits(task=task)
-
-    match task:
-        case "sarcoma_t1_grading_binary":
-            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/sarcoma_t1_grading_binary_folds.pt")
-        case "sarcoma_t2_grading_binary":
-            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/sarcoma_t2_grading_binary_folds.pt")
-        case _:
-            raise ValueError(f"Given task '{task}' unkown!")
         
     # ----------------------------
     # Define the transforms
-    # ----------------------------
+    # ---------------------------- 
 
-    if architecture == "ModelsGenesis":
-
-        transforms = Compose([
-            LoadImaged(keys=["image", "mask"]),
-            EnsureChannelFirstd(keys=["image", "mask"]),        
-            Orientationd(keys=["image", "mask"], axcodes="RAS"),
-            Spacingd(keys=["image", "mask"], pixdim=(1.0, 1.0, 1.0), mode=("bilinear", "nearest")),
-            NormalizeIntensityd(keys=["image"], nonzero=True),
-            CropForegroundd(keys=["image", "mask"], source_key="mask", select_fn=lambda x: x > 0),      
-            DivisiblePadd(keys=["image", "mask"], k=16),        
-            Lambdad(keys="label", func=lambda x: torch.tensor(x).long()),
-            ToTensord(keys=["image", "mask", "label"]),
-        ])
-    
-    else:
-        transforms = Compose([
-            LoadImaged(keys=["image", "mask"]),
-            EnsureChannelFirstd(keys=["image", "mask"]),        
-            Orientationd(keys=["image", "mask"], axcodes="RAS"),
-            Spacingd(keys=["image", "mask"], pixdim=(1.0, 1.0, 1.0), mode=("bilinear", "nearest")),
-            NormalizeIntensityd(keys=["image"], nonzero=True),
-            CropForegroundd(keys=["image", "mask"], source_key="mask", select_fn=lambda x: x > 0),    
-            DivisiblePadd(keys=["image", "mask"], k=16),     
-            Lambdad(keys="label", func=lambda x: torch.tensor(x).long()),
-            ToTensord(keys=["image", "mask", "label"]),
-        ])
+    transforms = Compose([
+        LoadImaged(keys=["image", "mask"]),
+        EnsureChannelFirstd(keys=["image", "mask"]),        
+        Orientationd(keys=["image", "mask"], axcodes="RAS"),
+        Spacingd(keys=["image", "mask"], pixdim=(1.0, 1.0, 1.0), mode=("bilinear", "nearest")),
+        NormalizeIntensityd(keys=["image"], nonzero=True),
+        CropForegroundd(keys=["image", "mask"], source_key="mask", select_fn=lambda x: x > 0),    
+        DivisiblePadd(keys=["image", "mask"], k=16),     
+        Lambdad(keys="label", func=lambda x: torch.tensor(x).long()),
+        ToTensord(keys=["image", "mask", "label"]),
+    ])
 
 
     # ----------------------------
@@ -136,22 +117,20 @@ def main(fold, architecture, task):
 
         print(f"\nFold {current_fold}")
 
-        current_fold_dict = folds_dict[current_fold]
-        train_subjects = current_fold_dict["train_subjects"]
-        train_labels = current_fold_dict["train_labels"]
-        test_subjects = current_fold_dict["test_subjects"]
-        test_labels = current_fold_dict["test_labels"]
+        folds_dict = torch.load(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/{task}_folds.pt", weights_only=False)
+        train_subjects = folds_dict[current_fold]["train_subjects"]
+        train_labels = folds_dict[current_fold]["train_labels"]
+        test_subjects = folds_dict[current_fold]["test_subjects"]
+        test_labels = folds_dict[current_fold]["test_labels"]
 
         mlflow.log_param("train_subjects", train_subjects)
         mlflow.log_param("test_subjects", test_subjects)
 
         match task:
             case "sarcoma_t1_grading_binary":
-                imgs = [file for file in glob("./data/sarcoma/*/T1/*nii.gz")]
-                imgs = [file for file in imgs if not "label" in file]
-                
-                segs = [file for file in glob("./data/sarcoma/*/T1/*nii.gz")]
-                segs = [file for file in segs if "label" in file]
+                files = [file for file in glob("./data/sarcoma/*/T1/*nii.gz")]
+                imgs = sorted([file for file in files if not "label" in file])
+                segs = sorted([file for file in files if "label" in file])
 
                 train_imgs = [file for file in imgs if any(subject in file for subject in train_subjects)]
                 train_segs = [file for file in segs if any(subject in file for subject in train_subjects)]
@@ -314,46 +293,46 @@ def main(fold, architecture, task):
                 lr = optimizer.param_groups[0]['lr']
 
             if epoch == 0:
-                torch.save(model.state_dict(), "model_mcc.pth")
-                mlflow.log_artifact("model_mcc.pth")
-                torch.save(model.state_dict(), "model_auc.pth")
-                mlflow.log_artifact("model_auc.pth")
-                torch.save(model.state_dict(), "model_bacc.pth")
-                mlflow.log_artifact("model_bacc.pth")
-                torch.save(model.state_dict(), "model_f1.pth")
-                mlflow.log_artifact("model_f1.pth")
-                torch.save(model.state_dict(), "model_loss.pth")
-                mlflow.log_artifact("model_loss.pth")
+                torch.save(model.state_dict(), f"model_mcc_{identifier}.pth")
+                mlflow.log_artifact(f"model_mcc_{identifier}.pth")
+                torch.save(model.state_dict(), f"model_auc_{identifier}.pth")
+                mlflow.log_artifact(f"model_auc_{identifier}.pth")
+                torch.save(model.state_dict(), f"model_bacc_{identifier}.pth")
+                mlflow.log_artifact(f"model_bacc_{identifier}.pth")
+                torch.save(model.state_dict(), f"model_f1_{identifier}.pth")
+                mlflow.log_artifact(f"model_f1_{identifier}.pth")
+                torch.save(model.state_dict(), f"model_loss_{identifier}.pth")
+                mlflow.log_artifact(f"model_loss_{identifier}.pth")
             
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 best_val_loss_epoch = epoch
-                torch.save(model.state_dict(), "model_loss.pth")
-                mlflow.log_artifact("model_loss.pth")
+                torch.save(model.state_dict(), f"model_loss_{identifier}.pth")
+                mlflow.log_artifact(f"model_loss_{identifier}.pth")
                 print(f"Best model saved at epoch {epoch+1} with loss {best_val_loss:.4f}")
             if val_f1 > best_val_f1:
                 best_val_f1 = val_f1
                 best_val_f1_epoch = epoch
-                torch.save(model.state_dict(), "model_f1.pth")
-                mlflow.log_artifact("model_f1.pth")
+                torch.save(model.state_dict(), f"model_f1_{identifier}.pth")
+                mlflow.log_artifact(f"model_f1_{identifier}.pth")
                 print(f"Best model saved at epoch {epoch+1} with F1 {best_val_f1:.4f}")
             if val_mcc > best_val_mcc:
                 best_val_mcc = val_mcc
                 best_val_mcc_epoch = epoch
-                torch.save(model.state_dict(), "model_mcc.pth")
-                mlflow.log_artifact("model_mcc.pth")
+                torch.save(model.state_dict(), f"model_mcc_{identifier}.pth")
+                mlflow.log_artifact(f"model_mcc_{identifier}.pth")
                 print(f"Best model saved at epoch {epoch+1} with MCC {best_val_mcc:.4f}")
             if val_auc > best_val_auc:
                 best_val_auc = val_auc
                 best_val_auc_epoch = epoch
-                torch.save(model.state_dict(), "model_auc.pth")
-                mlflow.log_artifact("model_auc.pth")
+                torch.save(model.state_dict(), f"model_auc_{identifier}.pth")
+                mlflow.log_artifact(f"model_auc_{identifier}.pth")
                 print(f"Best model saved at epoch {epoch+1} with AUC {best_val_auc:.4f}")
             if val_bacc > best_val_bacc:
                 best_val_bacc = val_bacc
                 best_val_bacc_epoch = epoch
-                torch.save(model.state_dict(), "model_bacc.pth")
-                mlflow.log_artifact("model_bacc.pth")
+                torch.save(model.state_dict(), f"model_bacc_{identifier}.pth")
+                mlflow.log_artifact(f"model_bacc_{identifier}.pth")
                 print(f"Best model saved at epoch {epoch+1} with BACC {best_val_bacc:.4f}")       
             
             mlflow.log_metric("train_loss", train_loss, step=epoch)
@@ -382,7 +361,7 @@ def main(fold, architecture, task):
         mlflow.log_param("best_val_bacc_epoch", best_val_bacc_epoch)        
 
         # Load the best model for evaluation  
-        model.load_state_dict(torch.load("model_auc.pth"))
+        model.load_state_dict(torch.load(f"model_auc_{identifier}.pth"))
 
         model.eval()
         test_loss_list = []
@@ -423,19 +402,33 @@ def main(fold, architecture, task):
         mlflow.log_metric("test_auc", test_auc)
         mlflow.log_metric("test_bacc", test_bacc)   
 
-        os.remove("model_auc.pth")
-        os.remove("model_bacc.pth")
-        os.remove("model_f1.pth")
-        os.remove("model_loss.pth")
-        os.remove("model_mcc.pth")
+        os.remove(f"model_auc_{identifier}.pth")
+        os.remove(f"model_bacc_{identifier}.pth")
+        os.remove(f"model_f1_{identifier}.pth")
+        os.remove(f"model_loss_{identifier}.pth")
+        os.remove(f"model_mcc_{identifier}.pth")
         os.remove("conda.yaml")     
 
-if __name__ == "__main__":    
+if __name__ == "__main__":   
 
-    for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
-        for architecture in ["I3D-DenseNet121"]:#, "I3D-ResNet50", "M3D-ResNet10", "M3D-ResNet18", "M3D-ResNet34", "M3D-ResNet50", "ModelsGenesis"]:
-            for fold in range(5):    
-                mlflow.set_experiment(task)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fold", type=int, default=-1, help="Fold number for cross-validation")
+    args = parser.parse_args()
+
+    if args.fold == -1:
+        for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
+            for architecture in ["I3D-DenseNet121", "I3D-ResNet50", "M3D-ResNet10", "M3D-ResNet18", "M3D-ResNet34", "M3D-ResNet50", "ModelsGenesis"]:
+                for fold in range(5):    
+                    mlflow.set_experiment(task+"_CNN")
+                    mlflow.start_run()    
+                    main(fold, architecture, task)
+                    mlflow.end_run()
+    
+    else:
+        for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
+            for architecture in ["I3D-DenseNet121", "I3D-ResNet50", "M3D-ResNet10", "M3D-ResNet18", "M3D-ResNet34", "M3D-ResNet50", "ModelsGenesis"]:
+                mlflow.set_experiment(task+"_CNN")
                 mlflow.start_run()    
-                main(fold, architecture, task)
+                main(args.fold, architecture, task)
                 mlflow.end_run()
+
