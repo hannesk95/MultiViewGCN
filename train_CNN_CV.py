@@ -117,7 +117,7 @@ def main(fold, architecture, task):
 
         print(f"\nFold {current_fold}")
 
-        folds_dict = torch.load(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/{task}_folds.pt", weights_only=False)
+        folds_dict = torch.load(f"./data/sarcoma/{task}_folds.pt", weights_only=False)
         train_subjects = folds_dict[current_fold]["train_subjects"]
         train_labels = folds_dict[current_fold]["train_labels"]
         test_subjects = folds_dict[current_fold]["test_subjects"]
