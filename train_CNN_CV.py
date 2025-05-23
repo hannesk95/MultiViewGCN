@@ -80,8 +80,8 @@ def main(fold, architecture, task):
     mlflow.log_param("initial_lr", INITIAL_LR)
     mlflow.log_param("target_lr", TARGET_LR)
     mlflow.log_param("fold", fold)
-    conda_yaml_path = save_conda_yaml()
-    mlflow.log_artifact(conda_yaml_path)   
+    # conda_yaml_path = save_conda_yaml()
+    # mlflow.log_artifact(conda_yaml_path)   
 
     # ----------------------------
     # Load data
@@ -407,7 +407,7 @@ def main(fold, architecture, task):
         os.remove(f"model_f1_{identifier}.pth")
         os.remove(f"model_loss_{identifier}.pth")
         os.remove(f"model_mcc_{identifier}.pth")
-        os.remove("conda.yaml")     
+        # os.remove("conda.yaml")     
 
 if __name__ == "__main__":   
 
