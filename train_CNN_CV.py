@@ -20,7 +20,7 @@ from utils import create_cv_splits
 import argparse
 import uuid
 
-EPOCHS = 3
+EPOCHS = 300
 # BATCH_SIZE = 2
 # ARCHITECTURE = "I3D"
 # DEPTH = 50
