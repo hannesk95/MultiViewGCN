@@ -31,7 +31,7 @@ TARGET_LR = 0.001
 SEED = 42
 # FOLDS = 5
 PRECISION = torch.float16
-DATA_CACHE_DIR = "./dataset_cache_dir"
+DATA_CACHE_DIR = "./data/sarcoma/monai_dataset_cache_dir"
 
 def main(fold, architecture, task):
 
