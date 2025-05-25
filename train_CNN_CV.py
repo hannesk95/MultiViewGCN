@@ -43,22 +43,22 @@ def main(fold, architecture, task):
         PRECISION = torch.float16
     elif ARCHITECTURE == "I3D-ResNet50":
         BATCH_SIZE = 8
-        PRECISION = torch.float16
+        PRECISION = torch.float32
     elif ARCHITECTURE == "ModelsGenesis":
         BATCH_SIZE = 2
-        PRECISION = torch.float16
+        PRECISION = torch.float32
     elif ARCHITECTURE == "M3D-ResNet50":
         BATCH_SIZE = 8
         PRECISION = torch.float32
     elif ARCHITECTURE == "M3D-ResNet34":
         BATCH_SIZE = 8
-        PRECISION = torch.float16
+        PRECISION = torch.float32
     elif ARCHITECTURE == "M3D-ResNet18":
         BATCH_SIZE = 8
-        PRECISION = torch.float16
+        PRECISION = torch.float32
     elif ARCHITECTURE == "M3D-ResNet10":
         BATCH_SIZE = 8
-        PRECISION = torch.float16
+        PRECISION = torch.float32
     
     # ----------------------------
     # Miscellaneous stuff
