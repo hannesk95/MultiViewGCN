@@ -42,7 +42,7 @@ def main(fold, architecture, task):
         BATCH_SIZE = 4
         PRECISION = torch.float16
     elif ARCHITECTURE == "I3D-ResNet50":
-        BATCH_SIZE = 8
+        BATCH_SIZE = 4
         PRECISION = torch.float32
     elif ARCHITECTURE == "ModelsGenesis":
         BATCH_SIZE = 2
@@ -425,8 +425,10 @@ if __name__ == "__main__":
                     mlflow.end_run()
     
     else:
-        for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
-            for architecture in ["M3D-ResNet10", "M3D-ResNet18", "M3D-ResNet34", "M3D-ResNet50", "ModelsGenesis", "I3D-DenseNet121", "I3D-ResNet50"]:
+        # for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
+        for task in ["sarcoma_t2_grading_binary"]:
+            for architecture in ["I3D-ResNet50"]:
+            # for architecture in ["M3D-ResNet10", "M3D-ResNet18", "M3D-ResNet34", "M3D-ResNet50", "ModelsGenesis", "I3D-DenseNet121", "I3D-ResNet50"]:
                 mlflow.set_experiment(task+"_CNN")
                 mlflow.start_run()    
                 main(args.fold, architecture, task)
