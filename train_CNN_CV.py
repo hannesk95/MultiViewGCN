@@ -144,11 +144,9 @@ def main(fold, architecture, task):
                 test_data = PersistentDataset(data=test_data_dicts, transform=transforms, cache_dir=DATA_CACHE_DIR) 
 
             case "sarcoma_t2_grading_binary":
-                imgs = [file for file in glob("./data/sarcoma/*/T2/*nii.gz")]
-                imgs = [file for file in imgs if not "label" in file]
-                
-                segs = [file for file in glob("./data/sarcoma/*/T2/*nii.gz")]
-                segs = [file for file in segs if "label" in file]
+                files = [file for file in glob("./data/sarcoma/*/T2/*nii.gz")]
+                imgs = sorted([file for file in files if not "label" in file])
+                segs = sorted([file for file in files if "label" in file])
 
                 train_imgs = [file for file in imgs if any(subject in file for subject in train_subjects)]
                 train_segs = [file for file in segs if any(subject in file for subject in train_subjects)]
