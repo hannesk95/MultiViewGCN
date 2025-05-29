@@ -31,7 +31,6 @@ TARGET_LR = 0.001
 SEED = 42
 # FOLDS = 5
 PRECISION = torch.float16
-DATA_CACHE_DIR = "./data/sarcoma/monai_dataset_cache_dir"
 
 def main(fold, architecture, task):
 
@@ -117,17 +116,27 @@ def main(fold, architecture, task):
 
         print(f"\nFold {current_fold}")
 
-        folds_dict = torch.load(f"./data/sarcoma/{task}_folds.pt", weights_only=False)
-        train_subjects = folds_dict[current_fold]["train_subjects"]
-        train_labels = folds_dict[current_fold]["train_labels"]
-        test_subjects = folds_dict[current_fold]["test_subjects"]
-        test_labels = folds_dict[current_fold]["test_labels"]
+        # folds_dict = torch.load(f"./data/sarcoma/{task}_folds.pt", weights_only=False)
+        # train_subjects = folds_dict[current_fold]["train_subjects"]
+        # train_labels = folds_dict[current_fold]["train_labels"]
+        # test_subjects = folds_dict[current_fold]["test_subjects"]
+        # test_labels = folds_dict[current_fold]["test_labels"]
 
-        mlflow.log_param("train_subjects", train_subjects)
-        mlflow.log_param("test_subjects", test_subjects)
+        # mlflow.log_param("train_subjects", train_subjects)
+        # mlflow.log_param("test_subjects", test_subjects)
 
         match task:
             case "sarcoma_t1_grading_binary":
+                
+                folds_dict = torch.load(f"./data/sarcoma/{task}_folds.pt", weights_only=False)
+                train_subjects = folds_dict[current_fold]["train_subjects"]
+                train_labels = folds_dict[current_fold]["train_labels"]
+                test_subjects = folds_dict[current_fold]["test_subjects"]
+                test_labels = folds_dict[current_fold]["test_labels"]
+
+                mlflow.log_param("train_subjects", train_subjects)
+                mlflow.log_param("test_subjects", test_subjects)
+
                 files = [file for file in glob("./data/sarcoma/*/T1/*nii.gz")]
                 imgs = sorted([file for file in files if not "label" in file])
                 segs = sorted([file for file in files if "label" in file])
@@ -140,10 +149,22 @@ def main(fold, architecture, task):
                 train_data_dicts = [{"image": img, "mask": mask, "label": label} for img, mask, label in zip(train_imgs, train_segs, train_labels)]
                 test_data_dicts = [{"image": img, "mask": mask, "label": label} for img, mask, label in zip(test_imgs, test_segs, test_labels)]
 
+                DATA_CACHE_DIR = "./data/sarcoma/monai_dataset_cache_dir"
+
                 train_val_data = PersistentDataset(data=train_data_dicts, transform=transforms, cache_dir=DATA_CACHE_DIR) 
                 test_data = PersistentDataset(data=test_data_dicts, transform=transforms, cache_dir=DATA_CACHE_DIR) 
 
             case "sarcoma_t2_grading_binary":
+
+                folds_dict = torch.load(f"./data/sarcoma/{task}_folds.pt", weights_only=False)
+                train_subjects = folds_dict[current_fold]["train_subjects"]
+                train_labels = folds_dict[current_fold]["train_labels"]
+                test_subjects = folds_dict[current_fold]["test_subjects"]
+                test_labels = folds_dict[current_fold]["test_labels"]
+
+                mlflow.log_param("train_subjects", train_subjects)
+                mlflow.log_param("test_subjects", test_subjects)
+
                 files = [file for file in glob("./data/sarcoma/*/T2/*nii.gz")]
                 imgs = sorted([file for file in files if not "label" in file])
                 segs = sorted([file for file in files if "label" in file])
@@ -155,6 +176,62 @@ def main(fold, architecture, task):
 
                 train_data_dicts = [{"image": img, "mask": mask, "label": label} for img, mask, label in zip(train_imgs, train_segs, train_labels)]
                 test_data_dicts = [{"image": img, "mask": mask, "label": label} for img, mask, label in zip(test_imgs, test_segs, test_labels)]
+
+                DATA_CACHE_DIR = "./data/sarcoma/monai_dataset_cache_dir"
+
+                train_val_data = PersistentDataset(data=train_data_dicts, transform=transforms, cache_dir=DATA_CACHE_DIR) 
+                test_data = PersistentDataset(data=test_data_dicts, transform=transforms, cache_dir=DATA_CACHE_DIR) 
+            
+            case "glioma_t1c_grading_binary":
+
+                folds_dict = torch.load(f"./data/ucsf/{task}_folds.pt", weights_only=False)
+                train_subjects = folds_dict[current_fold]["train_subjects"]
+                train_labels = folds_dict[current_fold]["train_labels"]
+                test_subjects = folds_dict[current_fold]["test_subjects"]
+                test_labels = folds_dict[current_fold]["test_labels"]
+
+                mlflow.log_param("train_subjects", train_subjects)
+                mlflow.log_param("test_subjects", test_subjects)
+
+                imgs = sorted([file for file in glob("./data/ucsf/glioma_four_sequences/*T1c*nii.gz")])
+                segs = sorted([file for file in glob("./data/ucsf/glioma_four_sequences/*tumor_seg*nii.gz")])
+
+                train_imgs = [file for file in imgs if any(subject in file for subject in train_subjects)]
+                train_segs = [file for file in segs if any(subject in file for subject in train_subjects)]
+                test_imgs = [file for file in imgs if any(subject in file for subject in test_subjects)]
+                test_segs = [file for file in segs if any(subject in file for subject in test_subjects)]
+
+                train_data_dicts = [{"image": img, "mask": mask, "label": label} for img, mask, label in zip(train_imgs, train_segs, train_labels)]
+                test_data_dicts = [{"image": img, "mask": mask, "label": label} for img, mask, label in zip(test_imgs, test_segs, test_labels)]
+
+                DATA_CACHE_DIR = "./data/ucsf/monai_dataset_cache_dir"
+
+                train_val_data = PersistentDataset(data=train_data_dicts, transform=transforms, cache_dir=DATA_CACHE_DIR) 
+                test_data = PersistentDataset(data=test_data_dicts, transform=transforms, cache_dir=DATA_CACHE_DIR) 
+            
+            case "glioma_flair_grading_binary":
+
+                folds_dict = torch.load(f"./data/ucsf/{task}_folds.pt", weights_only=False)
+                train_subjects = folds_dict[current_fold]["train_subjects"]
+                train_labels = folds_dict[current_fold]["train_labels"]
+                test_subjects = folds_dict[current_fold]["test_subjects"]
+                test_labels = folds_dict[current_fold]["test_labels"]
+
+                mlflow.log_param("train_subjects", train_subjects)
+                mlflow.log_param("test_subjects", test_subjects)
+
+                imgs = sorted([file for file in glob("./data/ucsf/glioma_four_sequences/*FLAIR*nii.gz")])
+                segs = sorted([file for file in glob("./data/ucsf/glioma_four_sequences/*tumor_seg*nii.gz")])
+
+                train_imgs = [file for file in imgs if any(subject in file for subject in train_subjects)]
+                train_segs = [file for file in segs if any(subject in file for subject in train_subjects)]
+                test_imgs = [file for file in imgs if any(subject in file for subject in test_subjects)]
+                test_segs = [file for file in segs if any(subject in file for subject in test_subjects)]
+
+                train_data_dicts = [{"image": img, "mask": mask, "label": label} for img, mask, label in zip(train_imgs, train_segs, train_labels)]
+                test_data_dicts = [{"image": img, "mask": mask, "label": label} for img, mask, label in zip(test_imgs, test_segs, test_labels)]
+
+                DATA_CACHE_DIR = "./data/ucsf/monai_dataset_cache_dir"
 
                 train_val_data = PersistentDataset(data=train_data_dicts, transform=transforms, cache_dir=DATA_CACHE_DIR) 
                 test_data = PersistentDataset(data=test_data_dicts, transform=transforms, cache_dir=DATA_CACHE_DIR) 
@@ -415,7 +492,7 @@ if __name__ == "__main__":
 
     if args.fold == -1:
         # for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
-        for task in ["sarcoma_t2_grading_binary"]:
+        for task in ["glioma_t1c_grading_binary", "glioma_flair_grading_binary"]:
             for architecture in ["M3D-ResNet10", "M3D-ResNet18", "M3D-ResNet34", "M3D-ResNet50", "ModelsGenesis", "I3D-DenseNet121", "I3D-ResNet50"]:
                 for fold in range(5):    
                     mlflow.set_experiment(task+"_CNN")
@@ -425,9 +502,8 @@ if __name__ == "__main__":
     
     else:
         # for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
-        for task in ["sarcoma_t2_grading_binary"]:
+        for task in ["glioma_t1c_grading_binary", "glioma_flair_grading_binary"]:
             for architecture in ["M3D-ResNet10", "M3D-ResNet18", "M3D-ResNet34", "M3D-ResNet50", "ModelsGenesis", "I3D-DenseNet121", "I3D-ResNet50"]:
-            # for architecture in ["M3D-ResNet10", "M3D-ResNet18", "M3D-ResNet34", "M3D-ResNet50", "ModelsGenesis", "I3D-DenseNet121", "I3D-ResNet50"]:
                 mlflow.set_experiment(task+"_CNN")
                 mlflow.start_run()    
                 main(args.fold, architecture, task)
