@@ -39,7 +39,7 @@ def main(fold, architecture, task, views, aggregation):
     seed_everything(SEED)    
     torch.cuda.empty_cache()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    mlflow.log_artifact("train_CNN_CV.py")
+    mlflow.log_artifact("train_MLP_CV.py")
     mlflow.log_artifact("model.py")
     mlflow.log_artifact("dataset.py")
     mlflow.log_artifact("utils.py")
@@ -67,6 +67,14 @@ def main(fold, architecture, task, views, aggregation):
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/sarcoma_t1_grading_binary_folds.pt")
         case "sarcoma_t2_grading_binary":
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/sarcoma_t2_grading_binary_folds.pt")
+        case "glioma_t1_grading_binary":
+            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_t1_grading_binary_folds.pt")
+        case "glioma_t2_grading_binary":
+            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_t2_grading_binary_folds.pt")
+        case "glioma_t1c_grading_binary":
+            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_t1c_grading_binary_folds.pt")
+        case "glioma_flair_grading_binary":
+            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_flair_grading_binary_folds.pt")
         case _:
             raise ValueError(f"Given task '{task}' unkown!")
 
@@ -104,6 +112,46 @@ def main(fold, architecture, task, views, aggregation):
             case "sarcoma_t2_grading_binary":
 
                 data = [file for file in glob(f"./data/sarcoma/*/T2/*graph-fibonacci-edge_attr_views{VIEWS}*.pt")]
+
+                train_data = [file for file in data if any(subject in file for subject in train_subjects)]
+                test_data = [file for file in data if any(subject in file for subject in test_subjects)]
+        
+                train_val_data = MLPDataset(train_data)
+                test_data = MLPDataset(test_data)
+            
+            case "glioma_flair_grading_binary":
+
+                data = [file for file in glob(f"./data/ucsf/glioma_four_sequences/*FLAIR_bias_graph-fibonacci-edge_attr_views{VIEWS}*.pt")]
+
+                train_data = [file for file in data if any(subject in file for subject in train_subjects)]
+                test_data = [file for file in data if any(subject in file for subject in test_subjects)]
+        
+                train_val_data = MLPDataset(train_data)
+                test_data = MLPDataset(test_data)
+            
+            case "glioma_t1_grading_binary":
+
+                data = [file for file in glob(f"./data/ucsf/glioma_four_sequences/*T1_bias_graph-fibonacci-edge_attr_views{VIEWS}*.pt")]
+
+                train_data = [file for file in data if any(subject in file for subject in train_subjects)]
+                test_data = [file for file in data if any(subject in file for subject in test_subjects)]
+        
+                train_val_data = MLPDataset(train_data)
+                test_data = MLPDataset(test_data)
+            
+            case "glioma_t1c_grading_binary":
+
+                data = [file for file in glob(f"./data/ucsf/glioma_four_sequences/*T1c_bias_graph-fibonacci-edge_attr_views{VIEWS}*.pt")]
+
+                train_data = [file for file in data if any(subject in file for subject in train_subjects)]
+                test_data = [file for file in data if any(subject in file for subject in test_subjects)]
+        
+                train_val_data = MLPDataset(train_data)
+                test_data = MLPDataset(test_data)
+            
+            case "glioma_t2_grading_binary":
+
+                data = [file for file in glob(f"./data/ucsf/glioma_four_sequences/*T2_bias_graph-fibonacci-edge_attr_views{VIEWS}*.pt")]
 
                 train_data = [file for file in data if any(subject in file for subject in train_subjects)]
                 test_data = [file for file in data if any(subject in file for subject in test_subjects)]
@@ -357,9 +405,11 @@ def main(fold, architecture, task, views, aggregation):
 if __name__ == "__main__":    
 
     for views in [8, 12, 16, 20, 24]:
-        for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
+        for task in ["glioma_t1_grading_binary"]:#, "glioma_flair_grading_binary", "glioma_t1c_grading_binary", "glioma_t2_grading_binary"]:
+        # for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
             for architecture in ["MLP"]:
-                for aggregation in ["mean", "max", "sum", "MLP"]:
+                # for aggregation in ["mean", "max", "sum", "MLP"]:
+                for aggregation in ["sum"]:
                     for fold in range(FOLDS):    
                         mlflow.set_experiment(task+"_MLP")
                         mlflow.start_run()    

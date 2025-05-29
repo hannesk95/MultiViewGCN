@@ -462,6 +462,48 @@ class CNN(torch.nn.Module):
             x = self.linear(x)
 
         return x
+    
+
+    
+import torch
+from torch_geometric.nn import SAGEConv
+from torch_geometric.utils import softmax
+from torch_geometric.typing import Adj, OptTensor
+from torch import Tensor
+from typing import Union, Tuple
+from torch_geometric.nn import MessagePassing
+
+class SAGEConvWithEdgeAttr(MessagePassing):
+    def __init__(self, in_channels, out_channels, edge_dim, flow, aggr='mean'):
+        super().__init__(aggr=aggr, flow=flow)
+        self.lin_l = Linear(in_channels, out_channels)
+        self.lin_r = Linear(in_channels, out_channels)
+        # self.edge_mlp = Linear(edge_dim, in_channels, bias=False)
+        
+        self.mlp = nn.Sequential(
+            nn.Linear(in_channels + edge_dim, in_channels),
+            nn.ReLU(),
+            nn.Linear(in_channels, in_channels)
+        )
+        
+
+    def forward(
+        self,
+        x: Union[Tensor, Tuple[Tensor, Tensor]],
+        edge_index: Adj,
+        edge_attr: OptTensor = None
+    ) -> Tensor:
+        x = (x, x) if isinstance(x, Tensor) else x
+        out = self.propagate(edge_index, x=x, edge_attr=edge_attr)
+        return self.lin_l(out) + self.lin_r(x[1])
+
+    def message(self, x_j: Tensor, edge_attr: OptTensor) -> Tensor:
+        if edge_attr is not None:
+            # edge_feat = self.edge_mlp(edge_attr)
+            # x_j = x_j + edge_feat  # or torch.cat([x_j, edge_feat], dim=-1)
+            x_j = torch.cat([x_j, edge_attr], dim=-1)  # or torch.cat([x_j, edge_feat], dim=-1)
+            x_j = self.mlp(x_j)
+        return x_j
 
 class GNN(torch.nn.Module):
     # https://github.com/pyg-team/pytorch_geometric/discussions/2891
@@ -499,6 +541,8 @@ class GNN(torch.nn.Module):
                 self.conv = GCNConv
             case "SAGE":
                 self.conv = SAGEConv
+            case "EdgeSAGE":
+                self.conv = SAGEConvWithEdgeAttr
             case "GIN":
                 self.conv = GINConv  
             case _:
