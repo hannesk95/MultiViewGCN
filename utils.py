@@ -147,5 +147,141 @@ def create_cv_splits(task: str, seed: int = 28) -> None:
             else:
                 print("CV Splits already exist.")
         
+        case "glioma_t1_grading_binary":
+            save_path = f"./data/ucsf/{task}_folds.pt"
+            if not os.path.exists(save_path):
+                files = sorted(glob("./data/ucsf/glioma_four_sequences/*T1_bias.nii.gz"))
+                subjects = [os.path.basename(subject).split("_")[0] for subject in files]
+                subjects = [patient_id.split("-")[0] + "-" + patient_id.split("-")[1] + "-" + patient_id.split("-")[2][1:] for patient_id in subjects]
+
+                labels = []
+                df = pd.read_csv("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/UCSF-PDGM-metadata_v2.csv")
+
+                for subject in subjects:
+                    grading = df[df["ID"] == subject]["WHO CNS Grade"].item()
+                    labels.append(0 if grading < 4 else 1)
+
+                skfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+
+                dict_folds = {}
+                for fold, (train_idx, test_idx) in enumerate(skfold.split(subjects, labels)):
+                    train_subjects = [subjects[i] for i in train_idx]
+                    train_labels = [labels[i] for i in train_idx]
+                    test_subjects = [subjects[i] for i in test_idx]
+                    test_labels = [labels[i] for i in test_idx]
+
+                    dict_folds[fold] = {"train_subjects": train_subjects,
+                                        "train_labels": train_labels,
+                                        "test_subjects": test_subjects,
+                                        "test_labels": test_labels
+                                        }
+
+                torch.save(dict_folds, save_path)
+                print("CV Splits saved successfully!")
+            else:
+                print("CV Splits already exist.")
+        
+        case "glioma_t2_grading_binary":
+            save_path = f"./data/ucsf/{task}_folds.pt"
+            if not os.path.exists(save_path):
+                files = sorted(glob("./data/ucsf/glioma_four_sequences/*T2_bias.nii.gz"))
+                subjects = [os.path.basename(subject).split("_")[0] for subject in files]
+                subjects = [patient_id.split("-")[0] + "-" + patient_id.split("-")[1] + "-" + patient_id.split("-")[2][1:] for patient_id in subjects]
+
+                labels = []
+                df = pd.read_csv("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/UCSF-PDGM-metadata_v2.csv")
+
+                for subject in subjects:
+                    grading = df[df["ID"] == subject]["WHO CNS Grade"].item()
+                    labels.append(0 if grading < 4 else 1)
+
+                skfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+
+                dict_folds = {}
+                for fold, (train_idx, test_idx) in enumerate(skfold.split(subjects, labels)):
+                    train_subjects = [subjects[i] for i in train_idx]
+                    train_labels = [labels[i] for i in train_idx]
+                    test_subjects = [subjects[i] for i in test_idx]
+                    test_labels = [labels[i] for i in test_idx]
+
+                    dict_folds[fold] = {"train_subjects": train_subjects,
+                                        "train_labels": train_labels,
+                                        "test_subjects": test_subjects,
+                                        "test_labels": test_labels
+                                        }
+
+                torch.save(dict_folds, save_path)
+                print("CV Splits saved successfully!")
+            else:
+                print("CV Splits already exist.")
+
+        case "glioma_t1c_grading_binary":
+            save_path = f"./data/ucsf/{task}_folds.pt"
+            if not os.path.exists(save_path):
+                files = sorted(glob("./data/ucsf/glioma_four_sequences/*T1c_bias.nii.gz"))
+                subjects = [os.path.basename(subject).split("_")[0] for subject in files]
+                subjects = [patient_id.split("-")[0] + "-" + patient_id.split("-")[1] + "-" + patient_id.split("-")[2][1:] for patient_id in subjects]
+
+                labels = []
+                df = pd.read_csv("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/UCSF-PDGM-metadata_v2.csv")
+
+                for subject in subjects:
+                    grading = df[df["ID"] == subject]["WHO CNS Grade"].item()
+                    labels.append(0 if grading < 4 else 1)
+
+                skfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+
+                dict_folds = {}
+                for fold, (train_idx, test_idx) in enumerate(skfold.split(subjects, labels)):
+                    train_subjects = [subjects[i] for i in train_idx]
+                    train_labels = [labels[i] for i in train_idx]
+                    test_subjects = [subjects[i] for i in test_idx]
+                    test_labels = [labels[i] for i in test_idx]
+
+                    dict_folds[fold] = {"train_subjects": train_subjects,
+                                        "train_labels": train_labels,
+                                        "test_subjects": test_subjects,
+                                        "test_labels": test_labels
+                                        }
+
+                torch.save(dict_folds, save_path)
+                print("CV Splits saved successfully!")
+            else:
+                print("CV Splits already exist.")
+
+        case "glioma_flair_grading_binary":
+            save_path = f"./data/ucsf/{task}_folds.pt"
+            if not os.path.exists(save_path):
+                files = sorted(glob("./data/ucsf/glioma_four_sequences/*FLAIR_bias.nii.gz"))
+                subjects = [os.path.basename(subject).split("_")[0] for subject in files]
+                subjects = [patient_id.split("-")[0] + "-" + patient_id.split("-")[1] + "-" + patient_id.split("-")[2][1:] for patient_id in subjects]
+
+                labels = []
+                df = pd.read_csv("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/UCSF-PDGM-metadata_v2.csv")
+
+                for subject in subjects:
+                    grading = df[df["ID"] == subject]["WHO CNS Grade"].item()
+                    labels.append(0 if grading < 4 else 1)
+
+                skfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+
+                dict_folds = {}
+                for fold, (train_idx, test_idx) in enumerate(skfold.split(subjects, labels)):
+                    train_subjects = [subjects[i] for i in train_idx]
+                    train_labels = [labels[i] for i in train_idx]
+                    test_subjects = [subjects[i] for i in test_idx]
+                    test_labels = [labels[i] for i in test_idx]
+
+                    dict_folds[fold] = {"train_subjects": train_subjects,
+                                        "train_labels": train_labels,
+                                        "test_subjects": test_subjects,
+                                        "test_labels": test_labels
+                                        }
+
+                torch.save(dict_folds, save_path)
+                print("CV Splits saved successfully!")
+            else:
+                print("CV Splits already exist.")
+
         case _:
             raise ValueError("Given task unkown!")
