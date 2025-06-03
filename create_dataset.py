@@ -616,13 +616,13 @@ def create_graph_topology(vertices: np.ndarray, faces: np.ndarray):
 
     return adjacency_matrix, edge_index
 
-def encode_largest_lesion_slice(volume: np.array, mask: np.array, image_processor, backbone, patient_id, dataset_name):
+def encode_largest_lesion_slice(volume: np.array, mask: np.array, image_processor, backbone, patient_id, dataset_name, axis=2):
 
     if dataset_name in ["sarcoma_t1", "sarcoma_t2", "headneck"]:
-        img_slice, seg_slice = show_biggest_lesion_slice(volume=volume, mask=mask, axis=2, save_plot=True, patient_id=patient_id, pad2square=False, crop2square=True, medmnist=False)
+        img_slice, seg_slice = show_biggest_lesion_slice(volume=volume, mask=mask, axis=axis, save_plot=True, patient_id=patient_id, pad2square=False, crop2square=True, medmnist=False)
     
     else:
-        img_slice, seg_slice = show_biggest_lesion_slice(volume=volume, mask=mask, axis=2, save_plot=True, patient_id=patient_id, pad2square=False, crop2square=True, medmnist=True)
+        img_slice, seg_slice = show_biggest_lesion_slice(volume=volume, mask=mask, axis=axis, save_plot=True, patient_id=patient_id, pad2square=False, crop2square=True, medmnist=True)
     
     img_slice = np.expand_dims(img_slice, axis=-1)
     img_slice = np.repeat(img_slice, 3, axis=-1)
@@ -681,9 +681,16 @@ def main(args: argparse.Namespace):
     assert len(img_list) == len(seg_list), "Number of images and segmentation masks are not the same!"
     print(f"[INFO] Number of images and masks found: {len(img_list)}")
 
-    vertices, faces = create_fibonacci_sphere(n_vertices=args.n_views, save_sphere=False)
-    rot_matrices = create_rotation_matrices(vertices=vertices)
-    adjacency_matrix, graph_edge_index = create_graph_topology(vertices=vertices, faces=faces)
+    if args.n_views > 3:
+
+        vertices, faces = create_fibonacci_sphere(n_vertices=args.n_views, save_sphere=False)
+        rot_matrices = create_rotation_matrices(vertices=vertices)
+        adjacency_matrix, graph_edge_index = create_graph_topology(vertices=vertices, faces=faces)
+    
+    else:
+        rot_matrices = []
+        edge_index = None
+        edge_attr = None
 
     processor = AutoImageProcessor.from_pretrained(args.dinov2_model, use_fast=False)
     model = AutoModel.from_pretrained(args.dinov2_model).to("cuda")
@@ -757,6 +764,19 @@ def main(args: argparse.Namespace):
                                                image_processor=processor, backbone=model, 
                                                patient_id=patient_id, dataset_name=dataset_name)
         outputs_list.append(encoding)
+
+        if args.n_views == 3:
+            encoding = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
+                                                   image_processor=processor, backbone=model, 
+                                                   patient_id=patient_id, dataset_name=dataset_name, axis=0)
+            outputs_list.append(encoding)
+
+            encoding = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
+                                                   image_processor=processor, backbone=model, 
+                                                   patient_id=patient_id, dataset_name=dataset_name, axis=1)
+            outputs_list.append(encoding)
+
+
         for rot_matrix in tqdm(rot_matrices):
             # img_arr_rotated = rotate_array_around_center(img_arr, rot_matrix, 1)
             img_arr_rotated = rotate_3d_tensor_around_center(torch.tensor(img_arr, dtype=torch.float32).cuda(), torch.tensor(rot_matrix, dtype=torch.float32).cuda(), order=1, device='cuda')
@@ -770,21 +790,23 @@ def main(args: argparse.Namespace):
             
             outputs_list.append(encoding)      
 
-        features = torch.concatenate(outputs_list, dim=0)        
-        edge_index = to_undirected(graph_edge_index)
+        features = torch.concatenate(outputs_list, dim=0)   
 
-        rot_matrices_temp = [np.eye(3)] + rot_matrices
+        if args.n_views > 3:     
+            edge_index = to_undirected(graph_edge_index)
 
-        edge_attr = []
-        for i in range(edge_index.shape[-1]):
-            edge = edge_index[:, i]
-            source = edge[0]
-            target = edge[1]
-            source_rot_matrix = rot_matrices_temp[source]
-            target_rot_matrix = rot_matrices_temp[target]
-            transition_matrix = target_rot_matrix @ source_rot_matrix.T
-            edge_attr.append(torch.from_numpy(transition_matrix.flatten()))
-        edge_attr = torch.stack(edge_attr, dim=0)
+            rot_matrices_temp = [np.eye(3)] + rot_matrices
+
+            edge_attr = []
+            for i in range(edge_index.shape[-1]):
+                edge = edge_index[:, i]
+                source = edge[0]
+                target = edge[1]
+                source_rot_matrix = rot_matrices_temp[source]
+                target_rot_matrix = rot_matrices_temp[target]
+                transition_matrix = target_rot_matrix @ source_rot_matrix.T
+                edge_attr.append(torch.from_numpy(transition_matrix.flatten()))
+            edge_attr = torch.stack(edge_attr, dim=0)
         
         if dataset_name in ["sarcoma_t1", "sarcoma_t2", "headneck"]:
             df = pd.read_csv(args.label_csv)
@@ -807,7 +829,7 @@ def main(args: argparse.Namespace):
 if __name__ == "__main__":    
 
     for dataset in ["sarcoma_t1", "sarcoma_t2"]:
-        for views in [8, 12, 16, 24]:
+        for views in [3]:
             
             parser = argparse.ArgumentParser()
             parser.add_argument("--dataset", default="sarcoma_t1", help="Name of dataset to be processed.", type=Path,
