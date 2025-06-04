@@ -193,8 +193,8 @@ def main(fold, architecture, task):
                 mlflow.log_param("train_subjects", train_subjects)
                 mlflow.log_param("test_subjects", test_subjects)
 
-                imgs = sorted([file for file in glob("./data/ucsf/glioma_four_sequences/*T1c*nii.gz")])
-                segs = sorted([file for file in glob("./data/ucsf/glioma_four_sequences/*tumor_seg*nii.gz")])
+                imgs = sorted([file for file in glob("./data/ucsf/glioma_four_sequences/*T1c_bias.nii.gz")])
+                segs = sorted([file for file in glob("./data/ucsf/glioma_four_sequences/*segmentation_merged.nii.gz")])
 
                 train_imgs = [file for file in imgs if any(subject in file for subject in train_subjects)]
                 train_segs = [file for file in segs if any(subject in file for subject in train_subjects)]
@@ -220,8 +220,8 @@ def main(fold, architecture, task):
                 mlflow.log_param("train_subjects", train_subjects)
                 mlflow.log_param("test_subjects", test_subjects)
 
-                imgs = sorted([file for file in glob("./data/ucsf/glioma_four_sequences/*FLAIR*nii.gz")])
-                segs = sorted([file for file in glob("./data/ucsf/glioma_four_sequences/*tumor_seg*nii.gz")])
+                imgs = sorted([file for file in glob("./data/ucsf/glioma_four_sequences/*FLAIR_bias.nii.gz")])
+                segs = sorted([file for file in glob("./data/ucsf/glioma_four_sequences/*segmentation_merged.nii.gz")])
 
                 train_imgs = [file for file in imgs if any(subject in file for subject in train_subjects)]
                 train_segs = [file for file in segs if any(subject in file for subject in train_subjects)]

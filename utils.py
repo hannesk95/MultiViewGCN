@@ -280,6 +280,38 @@ def create_cv_splits(task: str, seed: int = 28) -> None:
 
                 torch.save(dict_folds, save_path)
                 print("CV Splits saved successfully!")
+        
+        case "headneck_ct_hpv_binary":
+            save_path = f"./data/headneck/{task}_folds.pt"
+            if not os.path.exists(save_path):
+                dirs = sorted(glob("./data/headneck/converted_nii_merged/*"))
+                subjects = [os.path.basename(d) for d in dirs]
+
+                labels = []
+                df = pd.read_csv("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/headneck/patient_metadata_filtered.csv")
+
+                for subject in subjects:
+                    hpv = df[df["id"] == subject]["hpv"].item()
+                    labels.append(0 if hpv == "negative" else 1)
+
+                skfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+
+                dict_folds = {}
+                for fold, (train_idx, test_idx) in enumerate(skfold.split(subjects, labels)):
+                    train_subjects = [subjects[i] for i in train_idx]
+                    train_labels = [labels[i] for i in train_idx]
+                    test_subjects = [subjects[i] for i in test_idx]
+                    test_labels = [labels[i] for i in test_idx]
+
+                    dict_folds[fold] = {"train_subjects": train_subjects,
+                                        "train_labels": train_labels,
+                                        "test_subjects": test_subjects,
+                                        "test_labels": test_labels
+                                        }
+
+                torch.save(dict_folds, save_path)
+                print("CV Splits saved successfully!")
+            
             else:
                 print("CV Splits already exist.")
 

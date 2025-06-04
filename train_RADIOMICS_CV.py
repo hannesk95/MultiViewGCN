@@ -14,6 +14,7 @@ from radiomics import featureextractor
 import os
 from tqdm import tqdm
 import mlflow
+from sklearn.utils.class_weight import compute_class_weight
 
 def extract_radiomics_features(task, params_path=None):
 
@@ -30,6 +31,16 @@ def extract_radiomics_features(task, params_path=None):
             image_paths = sorted([path for path in image_paths if not "label" in path])
             mask_paths = glob("./data/sarcoma/*/T2/*.nii.gz")
             mask_paths = sorted([path for path in mask_paths if "label" in path])
+            output_csv_path = f"./radiomics_cache_dir/radiomics_features_{task}.csv"
+        
+        case "glioma_t1c_grading_binary":
+            image_paths = sorted(glob("./data/ucsf/glioma_four_sequences/*T1c_bias.nii.gz"))            
+            mask_paths = sorted(glob("./data/ucsf/glioma_four_sequences/*segmentation_merged.nii.gz"))            
+            output_csv_path = f"./radiomics_cache_dir/radiomics_features_{task}.csv"
+        
+        case "glioma_flair_grading_binary":
+            image_paths = sorted(glob("./data/ucsf/glioma_four_sequences/*FLAIR_bias.nii.gz"))            
+            mask_paths = sorted(glob("./data/ucsf/glioma_four_sequences/*segmentation_merged.nii.gz"))            
             output_csv_path = f"./radiomics_cache_dir/radiomics_features_{task}.csv"
 
         case _:
@@ -89,15 +100,32 @@ def train_classifier(task, model_type, score, current_fold):
 
     radiomics_csv_path = f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/radiomics_cache_dir/radiomics_features_{task}.csv"
     df = pd.read_csv(radiomics_csv_path)
-    df_metadata = pd.read_csv("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/patient_metadata.csv")
 
-    subjects = df["SubjectID"]
-    subjects = [subject[:6] if subject.startswith("Sar") else subject[:4] for subject in subjects]
+    if "sarcoma" in task:
+        df_metadata = pd.read_csv("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/patient_metadata.csv")
 
-    labels = []
-    for subject in subjects:
-        grading = df_metadata[df_metadata["ID"] == subject].Grading.item()
-        labels.append(0 if grading == 1 else 1)
+        subjects = df["SubjectID"]
+        subjects = [subject[:6] if subject.startswith("Sar") else subject[:4] for subject in subjects]
+
+        labels = []
+        for subject in subjects:
+            grading = df_metadata[df_metadata["ID"] == subject].Grading.item()
+            labels.append(0 if grading == 1 else 1)
+    
+    elif "glioma" in task:
+        df_metadata = pd.read_csv("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/UCSF-PDGM-metadata_v2.csv")
+
+        subjects = df["SubjectID"]
+        subjects = [subject.split("_")[0] for subject in subjects]
+        
+
+
+        labels = []
+        for subject in subjects:
+            subject = subject.split("-")[0] + "-" + subject.split("-")[1] + "-" + subject.split("-")[2][1:]
+            grading = df_metadata[df_metadata["ID"] == subject]["WHO CNS Grade"].item()
+            labels.append(0 if grading < 4 else 1)
+
 
     df["Label"] = labels
 
@@ -118,20 +146,41 @@ def train_classifier(task, model_type, score, current_fold):
 
         print(f"Fold {fold}")   
 
-        folds_dict = torch.load(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/{task}_folds.pt", weights_only=False)
-        train_subjects = folds_dict[fold]["train_subjects"]
-        test_subjects = folds_dict[fold]["test_subjects"]
+        # folds_dict = torch.load(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/{task}_folds.pt", weights_only=False)
+        # train_subjects = folds_dict[fold]["train_subjects"]
+        # test_subjects = folds_dict[fold]["test_subjects"]
 
         if task == "sarcoma_t1_grading_binary":
+            folds_dict = torch.load(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/{task}_folds.pt", weights_only=False)
+            train_subjects = folds_dict[fold]["train_subjects"]
+            test_subjects = folds_dict[fold]["test_subjects"]
             df["SubjectID"] = df["SubjectID"].str.replace("T1", "", regex=True)
             df["SubjectID"] = df["SubjectID"].str.replace("_updated_T1", "", regex=True)
             df["SubjectID"] = df["SubjectID"].str.replace("_updated", "", regex=True)
 
         elif task == "sarcoma_t2_grading_binary":
+            folds_dict = torch.load(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/{task}_folds.pt", weights_only=False)
+            train_subjects = folds_dict[fold]["train_subjects"]
+            test_subjects = folds_dict[fold]["test_subjects"]
             df["SubjectID"] = df["SubjectID"].str.replace("STIR_ax", "", regex=True)
             df["SubjectID"] = df["SubjectID"].str.replace("STIR_sag", "", regex=True)
             df["SubjectID"] = df["SubjectID"].str.replace("_updatedSTIR", "", regex=True)
             df["SubjectID"] = df["SubjectID"].str.replace("STIR", "", regex=True)
+        
+        elif task == "glioma_t1c_grading_binary":
+            folds_dict = torch.load(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/{task}_folds.pt", weights_only=False)
+            train_subjects = folds_dict[fold]["train_subjects"]
+            test_subjects = folds_dict[fold]["test_subjects"]
+            df["SubjectID"] = df["SubjectID"].str.replace("_T1c_bias", "", regex=True)
+            df['SubjectID'] = df['SubjectID'].str.replace(r'(UCSF-PDGM-)0(\d{3})$', r'\1\2', regex=True)
+        
+        elif task == "glioma_flair_grading_binary":
+            folds_dict = torch.load(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/{task}_folds.pt", weights_only=False)
+            train_subjects = folds_dict[fold]["train_subjects"]
+            test_subjects = folds_dict[fold]["test_subjects"]
+            df["SubjectID"] = df["SubjectID"].str.replace("_FLAIR_bias", "", regex=True)
+            df['SubjectID'] = df['SubjectID'].str.replace(r'(UCSF-PDGM-)0(\d{3})$', r'\1\2', regex=True)
+            
 
         train_df = df[df['SubjectID'].isin(train_subjects)]
         test_df = df[df['SubjectID'].isin(test_subjects)]
@@ -141,13 +190,15 @@ def train_classifier(task, model_type, score, current_fold):
         X_test = test_df.iloc[:, 38:-1].values
         y_test = np.array(test_df["Label"])
 
+        # class_weights = compute_class_weight(class_weight='balanced', classes=np.unique(y_train), y=y_train.flatten())
+
         cv_inner = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
         total_features = X_train.shape[1]
         n_components_list = [int(total_features * i) for i in np.arange(0.1, 1.1, 0.1)]    
         
         if model_type == "rf":
-            model = RandomForestClassifier(random_state=42)
+            model = RandomForestClassifier(random_state=42, class_weight="balanced")
             param_grid = {
                 'pca__n_components': n_components_list, 
                 "classifier__n_estimators": [50, 100, 250],
@@ -155,7 +206,7 @@ def train_classifier(task, model_type, score, current_fold):
             }
 
         elif model_type == "svm":
-            model = SVC(probability=True, random_state=42)
+            model = SVC(probability=True, random_state=42, class_weight="balanced")
             param_grid = {
                 'pca__n_components': n_components_list,  
                 "classifier__C": [0.01, 0.1, 1, 10, 100],
@@ -205,12 +256,12 @@ def train_classifier(task, model_type, score, current_fold):
 
 if __name__ == "__main__":
 
-    for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
+    for task in ["glioma_t1c_grading_binary", "glioma_flair_grading_binary"]:
         for model in ["rf", "svm"]:
             for fold in range(5):  
                 mlflow.set_experiment(task+"_RADIOMICS")
                 mlflow.start_run()            
-                extract_radiomics_features(task=task, params_path="./pyradiomics_mri_params.yaml")
+                # extract_radiomics_features(task=task, params_path="./pyradiomics_mri_params.yaml")
                 train_classifier(task=task, model_type=model, score="roc_auc", current_fold=fold)
                 mlflow.end_run()
     

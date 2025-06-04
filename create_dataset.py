@@ -20,6 +20,31 @@ import trimesh
 import torch.nn.functional as F
 import os
 
+def pad_to_shape(array, target_shape):
+    """
+    Symmetrically zero-pad a 2D NumPy array to a desired shape.
+
+    Parameters:
+    - array: 2D NumPy array to pad
+    - target_shape: tuple of (target_rows, target_cols)
+
+    Returns:
+    - padded_array: zero-padded array with shape == target_shape
+    """
+    assert len(array.shape) == 2, "Input must be 2D"
+    assert all(ts >= s for ts, s in zip(target_shape, array.shape)), "Target shape must be >= original shape"
+
+    pad_rows = target_shape[0] - array.shape[0]
+    pad_cols = target_shape[1] - array.shape[1]
+
+    pad_top = pad_rows // 2
+    pad_bottom = pad_rows - pad_top
+    pad_left = pad_cols // 2
+    pad_right = pad_cols - pad_left
+
+    padded_array = np.pad(array, ((pad_top, pad_bottom), (pad_left, pad_right)), mode='constant')
+    return padded_array
+
 
 def rescale_image(img: np.ndarray) -> np.ndarray:
     img = img - (np.min(img))
@@ -623,7 +648,7 @@ def encode_largest_lesion_slice(volume: np.array, mask: np.array, image_processo
     
     else:
         img_slice, seg_slice = show_biggest_lesion_slice(volume=volume, mask=mask, axis=axis, save_plot=True, patient_id=patient_id, pad2square=False, crop2square=True, medmnist=True)
-    
+
     img_slice = np.expand_dims(img_slice, axis=-1)
     img_slice = np.repeat(img_slice, 3, axis=-1)
     img_slice = rescale_image(img=img_slice)
@@ -633,7 +658,7 @@ def encode_largest_lesion_slice(volume: np.array, mask: np.array, image_processo
     outputs = backbone(inputs)
     outputs = backbone.layernorm(outputs.pooler_output).detach().cpu()
     
-    return outputs
+    return outputs, img_slice
 
 # @profile
 def main(args: argparse.Namespace):
@@ -654,10 +679,10 @@ def main(args: argparse.Namespace):
         seg_list = sorted([item for item in input_list if "label" in item])
         args.label_csv = "./data/sarcoma/patient_metadata.csv"
     elif str(args.dataset) == "headneck":
-        input_list = glob("./data/headneck/*/converted_nii/*/*.nii.gz")
+        input_list = glob("./data/headneck/converted_nii_merged/*/*.nii.gz")
         img_list = sorted([item for item in input_list if not "mask" in item]) 
         seg_list = sorted([item for item in input_list if "mask" in item]) 
-        args.label_csv = "./data/headneck/patient_metadata.csv"
+        args.label_csv = "./data/headneck/patient_metadata_filtered.csv"
     elif str(args.dataset) == "adrenal":
         input_list = glob("./data/medmnist3d/adrenalmnist3d_64/adrenal*image*.npy")
         img_list = sorted(input_list) 
@@ -674,10 +699,26 @@ def main(args: argparse.Namespace):
         input_list = glob("./data/medmnist3d/vesselmnist3d_64/vessel*image*.npy")
         img_list = sorted(input_list) 
         seg_list = img_list
+    elif str(args.dataset) == "glioma_t1":
+        img_list = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*T1_bias.nii.gz"))
+        seg_list = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*segmentation.nii.gz"))
+        args.label_csv = "/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/UCSF-PDGM-metadata_v2.csv"
+    elif str(args.dataset) == "glioma_t1c":
+        img_list = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*T1c_bias.nii.gz"))
+        seg_list = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*segmentation.nii.gz"))
+        args.label_csv = "/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/UCSF-PDGM-metadata_v2.csv"
+    elif str(args.dataset) == "glioma_t2":
+        img_list = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*T2_bias.nii.gz"))
+        seg_list = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*segmentation.nii.gz"))
+        args.label_csv = "/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/UCSF-PDGM-metadata_v2.csv"
+    elif str(args.dataset) == "glioma_flair":
+        img_list = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*FLAIR_bias.nii.gz"))
+        seg_list = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*segmentation.nii.gz"))
+        args.label_csv = "/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/UCSF-PDGM-metadata_v2.csv"
     else:
         raise NotImplementedError(f"Given dataset name {args.dataset} is not implemented!")
         
-    assert len(input_list) != 0, "No input volumes available, check path!"   
+    assert len(img_list) != 0, "No input volumes available, check path!"   
     assert len(img_list) == len(seg_list), "Number of images and segmentation masks are not the same!"
     print(f"[INFO] Number of images and masks found: {len(img_list)}")
 
@@ -697,21 +738,43 @@ def main(args: argparse.Namespace):
 
     for i in tqdm(range(len(img_list)), desc="Preprocess Data: "):
 
-        if str(args.dataset) in ["sarcoma_t1", "sarcoma_t2", "headneck"]:
+        if str(args.dataset) in ["sarcoma_t1", "sarcoma_t2", "headneck", "glioma_t1", "glioma_t1c", "glioma_t2", "glioma_flair"]:
             
             if str(args.dataset) == "sarcoma_t1":
                 save_path = seg_list[i].replace("label", "graph-fibonacci-edge_attr").replace(".nii.gz", "") + f"_views{args.n_views}_{model_name}.pt"
                 patient_id = [img_list[i].split("/")[-1]]
                 patient_id = [temp[:6] if temp.startswith("Sar") else temp[:4] for temp in patient_id][0]
+            
             elif str(args.dataset) == "sarcoma_t2":
                 save_path = seg_list[i].replace("label", "graph-fibonacci-edge_attr").replace(".nii.gz", "") + f"_views{args.n_views}_{model_name}.pt"
                 patient_id = [img_list[i].split("/")[-1]]
                 patient_id = [temp[:6] if temp.startswith("Sar") else temp[:4] for temp in patient_id][0]
+            
             elif str(args.dataset) == "headneck":
                 save_path = seg_list[i].replace("mask", "graph-fibonacci-edge_attr").replace(".nii.gz", "") + f"_views{args.n_views}_{model_name}.pt" 
                 patient_id = [img_list[i].split("/")[-1]]
-                patient_id = patient_id[0].split("_")[0]        
-        
+                patient_id = patient_id[0].split("_")[0]   
+
+            elif str(args.dataset) == "glioma_t1":
+                save_path = img_list[i].replace(".nii.gz", "_graph-fibonacci-edge_attr") + f"_views{args.n_views}_{model_name}.pt"
+                patient_id = os.path.basename(img_list[i]).split("_")[0]
+                patient_id = patient_id.split("-")[0] + "-" + patient_id.split("-")[1] + "-" + patient_id.split("-")[2][1:]
+            
+            elif str(args.dataset) == "glioma_t1c":
+                save_path = img_list[i].replace(".nii.gz", "_graph-fibonacci-edge_attr") + f"_views{args.n_views}_{model_name}.pt"
+                patient_id = os.path.basename(img_list[i]).split("_")[0]     
+                patient_id = patient_id.split("-")[0] + "-" + patient_id.split("-")[1] + "-" + patient_id.split("-")[2][1:]         
+            
+            elif str(args.dataset) == "glioma_t2":
+                save_path = img_list[i].replace(".nii.gz", "_graph-fibonacci-edge_attr") + f"_views{args.n_views}_{model_name}.pt"
+                patient_id = os.path.basename(img_list[i]).split("_")[0]  
+                patient_id = patient_id.split("-")[0] + "-" + patient_id.split("-")[1] + "-" + patient_id.split("-")[2][1:]            
+            
+            elif str(args.dataset) == "glioma_flair":
+                save_path = img_list[i].replace(".nii.gz", "_graph-fibonacci-edge_attr") + f"_views{args.n_views}_{model_name}.pt"
+                patient_id = os.path.basename(img_list[i]).split("_")[0]  
+                patient_id = patient_id.split("-")[0] + "-" + patient_id.split("-")[1] + "-" + patient_id.split("-")[2][1:]      
+            
             subject = tio.Subject(
                 img = tio.ScalarImage(img_list[i]),
                 seg = tio.LabelMap(seg_list[i])
@@ -760,21 +823,60 @@ def main(args: argparse.Namespace):
         seg_arr = subject_iso_pad.seg.numpy()[0]
 
         outputs_list = []
-        encoding = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
+        encoding, _ = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
                                                image_processor=processor, backbone=model, 
                                                patient_id=patient_id, dataset_name=dataset_name)
         outputs_list.append(encoding)
 
-        if args.n_views == 3:
-            encoding = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
-                                                   image_processor=processor, backbone=model, 
-                                                   patient_id=patient_id, dataset_name=dataset_name, axis=0)
-            outputs_list.append(encoding)
+        # if args.n_views == 3:
+        #     encoding, _ = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
+        #                                            image_processor=processor, backbone=model, 
+        #                                            patient_id=patient_id, dataset_name=dataset_name, axis=0)
+        #     outputs_list.append(encoding)
 
-            encoding = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
+        #     encoding, _ = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
+        #                                            image_processor=processor, backbone=model, 
+        #                                            patient_id=patient_id, dataset_name=dataset_name, axis=1)
+        #     outputs_list.append(encoding)
+        
+        if args.n_views == 3:
+            encoding, img_slice = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
                                                    image_processor=processor, backbone=model, 
-                                                   patient_id=patient_id, dataset_name=dataset_name, axis=1)
-            outputs_list.append(encoding)
+                                                   patient_id=patient_id, dataset_name=dataset_name, axis=0)     
+
+            img_slice_0 = img_slice[:, :, 0]
+            img_slice_0_shape = img_slice_0.shape[0]      
+
+            encoding, img_slice = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
+                                                   image_processor=processor, backbone=model, 
+                                                   patient_id=patient_id, dataset_name=dataset_name, axis=1)         
+            img_slice_1 = img_slice[:, :, 0]  
+            img_slice_1_shape = img_slice_1.shape[0] 
+            
+            encoding, img_slice = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
+                                                   image_processor=processor, backbone=model, 
+                                                   patient_id=patient_id, dataset_name=dataset_name, axis=2)
+            img_slice_2 = img_slice[:, :, 0]  
+            img_slice_2_shape = img_slice_2.shape[0]  
+
+            target_shape = np.max([img_slice_0_shape, img_slice_1_shape, img_slice_2_shape])
+
+            img_slice_0_pad = pad_to_shape(img_slice_0, target_shape=(target_shape, target_shape))
+            img_slice_1_pad = pad_to_shape(img_slice_1, target_shape=(target_shape, target_shape))
+            img_slice_2_pad = pad_to_shape(img_slice_2, target_shape=(target_shape, target_shape))
+            img_slice_0 = np.expand_dims(img_slice_0_pad, axis=-1)
+            img_slice_1 = np.expand_dims(img_slice_1_pad, axis=-1)
+            img_slice_2 = np.expand_dims(img_slice_2_pad, axis=-1)
+
+            img_slice = np.concatenate([img_slice_0, img_slice_1, img_slice_2], axis=-1)
+            img_slice_pil = Image.fromarray(img_slice)
+            inputs = processor(images=img_slice_pil, return_tensors="pt")
+            inputs = inputs.pixel_values.to("cuda")
+            outputs = model(inputs)
+            outputs = model.layernorm(outputs.pooler_output).detach().cpu()
+
+            outputs_list = []
+            outputs_list.append(outputs)            
 
 
         for rot_matrix in tqdm(rot_matrices):
@@ -784,7 +886,7 @@ def main(args: argparse.Namespace):
             seg_arr_rotated = rotate_3d_tensor_around_center(torch.tensor(seg_arr, dtype=torch.float32).cuda(), torch.tensor(rot_matrix, dtype=torch.float32).cuda(), order=0, device='cuda')
 
             
-            encoding = encode_largest_lesion_slice(volume=img_arr_rotated, mask=seg_arr_rotated, 
+            encoding, _ = encode_largest_lesion_slice(volume=img_arr_rotated, mask=seg_arr_rotated, 
                                                    image_processor=processor, backbone=model, 
                                                    patient_id=patient_id, dataset_name=dataset_name)
             
@@ -808,17 +910,32 @@ def main(args: argparse.Namespace):
                 edge_attr.append(torch.from_numpy(transition_matrix.flatten()))
             edge_attr = torch.stack(edge_attr, dim=0)
         
-        if dataset_name in ["sarcoma_t1", "sarcoma_t2", "headneck"]:
+        if dataset_name in ["sarcoma_t1", "sarcoma_t2", "headneck", "glioma_t1", "glioma_t1c", "glioma_t2", "glioma_flair"]:
             df = pd.read_csv(args.label_csv)
+            
             if dataset_name == "sarcoma_t1":
                 label = df[df["ID"] == patient_id].Grading.item() 
                 label = 0 if label == 1 else 1
             elif dataset_name == "sarcoma_t2":
                 label = df[df["ID"] == patient_id].Grading.item() 
                 label = 0 if label == 1 else 1
-            else:
+            elif dataset_name == "glioma_t1":
+                label = df[df["ID"] == patient_id]["WHO CNS Grade"].item()
+                label = 0 if label < 4 else 1
+            elif dataset_name == "glioma_t1c":
+                label = df[df["ID"] == patient_id]["WHO CNS Grade"].item()
+                label = 0 if label < 4 else 1
+            elif dataset_name == "glioma_t2":
+                label = df[df["ID"] == patient_id]["WHO CNS Grade"].item()
+                label = 0 if label < 4 else 1
+            elif dataset_name == "glioma_flair":
+                label = df[df["ID"] == patient_id]["WHO CNS Grade"].item()
+                label = 0 if label < 4 else 1
+            elif dataset_name == "headneck":
                 label = df[df["id"] == patient_id].hpv.item() 
                 label = 0 if label == "negative" else 1
+            else:
+                raise NotImplementedError(f"Dataset {dataset_name} is not implemented for label extraction!")
         else:
             label = np.load(img_list[i].replace("image", "label")).item()
 
@@ -828,13 +945,13 @@ def main(args: argparse.Namespace):
      
 if __name__ == "__main__":    
 
-    for dataset in ["sarcoma_t1", "sarcoma_t2"]:
-        for views in [3]:
+    for dataset in ["headneck"]:
+        for views in [1, 3, 8, 12, 16, 20, 24]:
             
             parser = argparse.ArgumentParser()
             parser.add_argument("--dataset", default="sarcoma_t1", help="Name of dataset to be processed.", type=Path,
-                                choices=["sarcoma_t1", "sarcoma_t2", "headneck", "nodule", "adrenal", "synapse", "vessel"], )
-            parser.add_argument("--n_views", default=3, choices=[1, 3, 6, 14, 26, 42], help="Number of view points to slice input volume.", type=int)
+                                choices=["sarcoma_t1", "sarcoma_t2", "headneck", "glioma_t1c", "glioma_flair"], )
+            parser.add_argument("--n_views", default=3, choices=[1, 3, 8, 12, 16, 20, 24], help="Number of view points to slice input volume.", type=int)
             parser.add_argument("--target_spacing", default=1, help="Target voxel spacing of input data.", type=int)
             parser.add_argument("--interpolation", default="linear", choices=["linear", "bspline"], help="Interpolation type used for resampling.", type=str)
             parser.add_argument("--dinov2_model", default='facebook/dinov2-small', help="Pretrained DINOv2 model architecture.", type=str,

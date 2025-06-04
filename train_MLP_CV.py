@@ -64,17 +64,19 @@ def main(fold, architecture, task, views, aggregation):
 
     match task:
         case "sarcoma_t1_grading_binary":
-            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/sarcoma_t1_grading_binary_folds.pt")
+            folds_dict = torch.load("./data/sarcoma/sarcoma_t1_grading_binary_folds.pt")
         case "sarcoma_t2_grading_binary":
-            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/sarcoma_t2_grading_binary_folds.pt")
+            folds_dict = torch.load("./data/sarcoma/sarcoma_t2_grading_binary_folds.pt")
         case "glioma_t1_grading_binary":
-            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_t1_grading_binary_folds.pt")
+            folds_dict = torch.load("./data/ucsf/glioma_t1_grading_binary_folds.pt")
         case "glioma_t2_grading_binary":
-            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_t2_grading_binary_folds.pt")
+            folds_dict = torch.load("./data/ucsf/glioma_t2_grading_binary_folds.pt")
         case "glioma_t1c_grading_binary":
-            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_t1c_grading_binary_folds.pt")
+            folds_dict = torch.load("./data/ucsf/glioma_t1c_grading_binary_folds.pt")
         case "glioma_flair_grading_binary":
-            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_flair_grading_binary_folds.pt")
+            folds_dict = torch.load("./data/ucsf/glioma_flair_grading_binary_folds.pt")
+        case "headneck_ct_hpv_binary":
+            folds_dict = torch.load("./data/headneck/headneck_ct_hpv_binary_folds.pt")
         case _:
             raise ValueError(f"Given task '{task}' unkown!")
 
@@ -101,7 +103,7 @@ def main(fold, architecture, task, views, aggregation):
         match task:
             case "sarcoma_t1_grading_binary":
 
-                data = [file for file in glob(f"./data/sarcoma/*/T1/*graph-fibonacci-edge_attr_views{VIEWS}*.pt")]
+                data = [file for file in glob(f"./data/sarcoma/*/T1/*graph-fibonacci-edge_attr_views{VIEWS}_*.pt")]
 
                 train_data = [file for file in data if any(subject in file for subject in train_subjects)]
                 test_data = [file for file in data if any(subject in file for subject in test_subjects)]
@@ -111,7 +113,7 @@ def main(fold, architecture, task, views, aggregation):
 
             case "sarcoma_t2_grading_binary":
 
-                data = [file for file in glob(f"./data/sarcoma/*/T2/*graph-fibonacci-edge_attr_views{VIEWS}*.pt")]
+                data = [file for file in glob(f"./data/sarcoma/*/T2/*graph-fibonacci-edge_attr_views{VIEWS}_*.pt")]
 
                 train_data = [file for file in data if any(subject in file for subject in train_subjects)]
                 test_data = [file for file in data if any(subject in file for subject in test_subjects)]
@@ -121,7 +123,7 @@ def main(fold, architecture, task, views, aggregation):
             
             case "glioma_flair_grading_binary":
 
-                data = [file for file in glob(f"./data/ucsf/glioma_four_sequences/*FLAIR_bias_graph-fibonacci-edge_attr_views{VIEWS}*.pt")]
+                data = [file for file in glob(f"./data/ucsf/glioma_four_sequences/*FLAIR_bias_graph-fibonacci-edge_attr_views{VIEWS}_*.pt")]
 
                 train_data = [file for file in data if any(subject in file for subject in train_subjects)]
                 test_data = [file for file in data if any(subject in file for subject in test_subjects)]
@@ -131,7 +133,7 @@ def main(fold, architecture, task, views, aggregation):
             
             case "glioma_t1_grading_binary":
 
-                data = [file for file in glob(f"./data/ucsf/glioma_four_sequences/*T1_bias_graph-fibonacci-edge_attr_views{VIEWS}*.pt")]
+                data = [file for file in glob(f"./data/ucsf/glioma_four_sequences/*T1_bias_graph-fibonacci-edge_attr_views{VIEWS}_*.pt")]
 
                 train_data = [file for file in data if any(subject in file for subject in train_subjects)]
                 test_data = [file for file in data if any(subject in file for subject in test_subjects)]
@@ -141,7 +143,7 @@ def main(fold, architecture, task, views, aggregation):
             
             case "glioma_t1c_grading_binary":
 
-                data = [file for file in glob(f"./data/ucsf/glioma_four_sequences/*T1c_bias_graph-fibonacci-edge_attr_views{VIEWS}*.pt")]
+                data = [file for file in glob(f"./data/ucsf/glioma_four_sequences/*T1c_bias_graph-fibonacci-edge_attr_views{VIEWS}_*.pt")]
 
                 train_data = [file for file in data if any(subject in file for subject in train_subjects)]
                 test_data = [file for file in data if any(subject in file for subject in test_subjects)]
@@ -151,7 +153,17 @@ def main(fold, architecture, task, views, aggregation):
             
             case "glioma_t2_grading_binary":
 
-                data = [file for file in glob(f"./data/ucsf/glioma_four_sequences/*T2_bias_graph-fibonacci-edge_attr_views{VIEWS}*.pt")]
+                data = [file for file in glob(f"./data/ucsf/glioma_four_sequences/*T2_bias_graph-fibonacci-edge_attr_views{VIEWS}_*.pt")]
+
+                train_data = [file for file in data if any(subject in file for subject in train_subjects)]
+                test_data = [file for file in data if any(subject in file for subject in test_subjects)]
+        
+                train_val_data = MLPDataset(train_data)
+                test_data = MLPDataset(test_data)
+            
+            case "headneck_ct_hpv_binary":
+
+                data = [file for file in glob(f"./data/headneck/converted_nii_merged/*/*graph-fibonacci-edge_attr*views{VIEWS}_*.pt")]
 
                 train_data = [file for file in data if any(subject in file for subject in train_subjects)]
                 test_data = [file for file in data if any(subject in file for subject in test_subjects)]
@@ -402,14 +414,13 @@ def main(fold, architecture, task, views, aggregation):
         os.remove("model_mcc.pth")
         os.remove("conda.yaml")     
 
-if __name__ == "__main__":    
+if __name__ == "__main__":   
 
-    for views in [8, 12, 16, 20, 24]:
-        for task in ["glioma_t1_grading_binary"]:#, "glioma_flair_grading_binary", "glioma_t1c_grading_binary", "glioma_t2_grading_binary"]:
-        # for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
+    for views in [1, 3, 8, 12, 16, 20, 24]:
+        for task in ["headneck_ct_hpv_binary", "glioma_flair_grading_binary", "glioma_t1c_grading_binary", "sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
             for architecture in ["MLP"]:
                 # for aggregation in ["mean", "max", "sum", "MLP"]:
-                for aggregation in ["sum"]:
+                for aggregation in ["mean"]:
                     for fold in range(FOLDS):    
                         mlflow.set_experiment(task+"_MLP")
                         mlflow.start_run()    
