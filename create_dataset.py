@@ -715,6 +715,10 @@ def main(args: argparse.Namespace):
         img_list = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*FLAIR_bias.nii.gz"))
         seg_list = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*segmentation.nii.gz"))
         args.label_csv = "/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/UCSF-PDGM-metadata_v2.csv"
+    elif str(args.dataset) == "breast":
+        img_list = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/breast/duke_tumor_grading/DUKE_*_0000.nii.gz"))
+        seg_list = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/breast/duke_tumor_grading/DUKE_*segmentation.nii.gz"))
+        args.label_csv = "/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/breast/clinical_and_imaging_info.xlsx"
     else:
         raise NotImplementedError(f"Given dataset name {args.dataset} is not implemented!")
         
@@ -738,7 +742,7 @@ def main(args: argparse.Namespace):
 
     for i in tqdm(range(len(img_list)), desc="Preprocess Data: "):
 
-        if str(args.dataset) in ["sarcoma_t1", "sarcoma_t2", "headneck", "glioma_t1", "glioma_t1c", "glioma_t2", "glioma_flair"]:
+        if str(args.dataset) in ["sarcoma_t1", "sarcoma_t2", "headneck", "glioma_t1", "glioma_t1c", "glioma_t2", "glioma_flair", "breast"]:
             
             if str(args.dataset) == "sarcoma_t1":
                 save_path = seg_list[i].replace("label", "graph-fibonacci-edge_attr").replace(".nii.gz", "") + f"_views{args.n_views}_{model_name}.pt"
@@ -774,6 +778,11 @@ def main(args: argparse.Namespace):
                 save_path = img_list[i].replace(".nii.gz", "_graph-fibonacci-edge_attr") + f"_views{args.n_views}_{model_name}.pt"
                 patient_id = os.path.basename(img_list[i]).split("_")[0]  
                 patient_id = patient_id.split("-")[0] + "-" + patient_id.split("-")[1] + "-" + patient_id.split("-")[2][1:]      
+            
+            elif str(args.dataset) == "breast":
+                save_path = img_list[i].replace(".nii.gz", "_graph-fibonacci-edge_attr") + f"_views{args.n_views}_{model_name}.pt"
+                patient_id = os.path.basename(img_list[i]).replace(".nii.gz", "")[:8]
+                   
             
             subject = tio.Subject(
                 img = tio.ScalarImage(img_list[i]),
@@ -936,6 +945,12 @@ def main(args: argparse.Namespace):
                 label = 0 if label == "negative" else 1
             else:
                 raise NotImplementedError(f"Dataset {dataset_name} is not implemented for label extraction!")
+        
+        elif dataset_name in ["breast"]:
+            df = pd.read_excel(args.label_csv)
+            label = df[df["patient_id"] == patient_id]["nottingham_grade"].item()
+            label = 1 if label == "high" else 0
+        
         else:
             label = np.load(img_list[i].replace("image", "label")).item()
 
@@ -945,12 +960,12 @@ def main(args: argparse.Namespace):
      
 if __name__ == "__main__":    
 
-    for dataset in ["headneck"]:
+    for dataset in ["breast"]:
         for views in [1, 3, 8, 12, 16, 20, 24]:
             
             parser = argparse.ArgumentParser()
             parser.add_argument("--dataset", default="sarcoma_t1", help="Name of dataset to be processed.", type=Path,
-                                choices=["sarcoma_t1", "sarcoma_t2", "headneck", "glioma_t1c", "glioma_flair"], )
+                                choices=["sarcoma_t1", "sarcoma_t2", "headneck", "glioma_t1c", "glioma_flair", "breast"], )
             parser.add_argument("--n_views", default=3, choices=[1, 3, 8, 12, 16, 20, 24], help="Number of view points to slice input volume.", type=int)
             parser.add_argument("--target_spacing", default=1, help="Target voxel spacing of input data.", type=int)
             parser.add_argument("--interpolation", default="linear", choices=["linear", "bspline"], help="Interpolation type used for resampling.", type=str)
