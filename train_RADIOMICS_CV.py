@@ -96,7 +96,7 @@ def extract_radiomics_features(task, params_path=None):
         print(f"\nRadiomics feature matrix saved to: {output_csv_path}")
 
 
-def train_classifier(task, model_type, score, current_fold):
+def train_classifier(task, model_type, score, current_fold, features="all"):
 
     radiomics_csv_path = f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/radiomics_cache_dir/radiomics_features_{task}.csv"
     df = pd.read_csv(radiomics_csv_path)
@@ -185,10 +185,22 @@ def train_classifier(task, model_type, score, current_fold):
         train_df = df[df['SubjectID'].isin(train_subjects)]
         test_df = df[df['SubjectID'].isin(test_subjects)]
 
-        X_train = train_df.iloc[:, 38:-1].values
-        y_train = np.array(train_df["Label"])
-        X_test = test_df.iloc[:, 38:-1].values
-        y_test = np.array(test_df["Label"])
+        if features == "all":
+            X_train = train_df.iloc[:, 38:-1].values
+            y_train = np.array(train_df["Label"])
+            X_test = test_df.iloc[:, 38:-1].values
+            y_test = np.array(test_df["Label"])
+        elif features == "texture":
+            X_train = train_df.iloc[:, 52:-1].values
+            y_train = np.array(train_df["Label"])
+            X_test = test_df.iloc[:, 52:-1].values
+            y_test = np.array(test_df["Label"])
+        elif features == "shape":
+            X_train = train_df.iloc[:, 38:52].values
+            y_train = np.array(train_df["Label"])
+            X_test = test_df.iloc[:, 38:52].values
+            y_test = np.array(test_df["Label"])
+
 
         # class_weights = compute_class_weight(class_weight='balanced', classes=np.unique(y_train), y=y_train.flatten())
 
@@ -256,12 +268,13 @@ def train_classifier(task, model_type, score, current_fold):
 
 if __name__ == "__main__":
 
-    for task in ["glioma_t1c_grading_binary", "glioma_flair_grading_binary"]:
-        for model in ["rf", "svm"]:
-            for fold in range(5):  
-                mlflow.set_experiment(task+"_RADIOMICS")
-                mlflow.start_run()            
-                # extract_radiomics_features(task=task, params_path="./pyradiomics_mri_params.yaml")
-                train_classifier(task=task, model_type=model, score="roc_auc", current_fold=fold)
-                mlflow.end_run()
+    for features in ["texture"]:
+        for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary", "glioma_t1c_grading_binary", "glioma_flair_grading_binary"]:
+            for model in ["rf", "svm"]:
+                for fold in range(5):  
+                    mlflow.set_experiment(task+"_RADIOMICS_"+features)
+                    mlflow.start_run()            
+                    # extract_radiomics_features(task=task, params_path="./pyradiomics_mri_params.yaml")
+                    train_classifier(task=task, model_type=model, score="roc_auc", current_fold=fold, features=features)
+                    mlflow.end_run()
     
