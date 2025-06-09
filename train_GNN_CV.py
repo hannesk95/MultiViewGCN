@@ -91,6 +91,8 @@ def main(fold, architecture, task, views, readout, aggregation, hierarchical_rea
             folds_dict = torch.load("./data/ucsf/glioma_flair_grading_binary_folds.pt")
         case "headneck_ct_hpv_binary":
             folds_dict = torch.load("./data/headneck/headneck_ct_hpv_binary_folds.pt")
+        case "breast_mri_grading_binary":
+            folds_dict = torch.load("./data/breast/breast_mri_grading_binary_folds.pt")
         case _:
             raise ValueError(f"Given task '{task}' unkown!")
 
@@ -165,8 +167,15 @@ def main(fold, architecture, task, views, readout, aggregation, hierarchical_rea
                 train_val_data = GNNDataset(train_data)
                 test_data = GNNDataset(test_data)
             
+            case "breast_mri_grading_binary":
 
-            
+                data = [file for file in glob(f"./data/breast/duke_tumor_grading/*0000_graph-fibonacci-edge_attr*views{VIEWS}_*.pt")]
+
+                train_data = [file for file in data if any(subject in file for subject in train_subjects)]
+                test_data = [file for file in data if any(subject in file for subject in test_subjects)]
+        
+                train_val_data = GNNDataset(train_data)
+                test_data = GNNDataset(test_data)            
 
         # Further split train_val into training and validation (80/20 split)
         train_size = int(0.8 * len(train_val_data))
@@ -414,7 +423,7 @@ if __name__ == "__main__":
 
     if args.fold == -1:
 
-        for task in ["headneck_ct_hpv_binary"]:
+        for task in ["breast_mri_grading_binary"]:
             for architecture in ["SAGE"]:
                 for views in [8, 12, 16, 20, 24]:
                     for readout in ["max"]:
