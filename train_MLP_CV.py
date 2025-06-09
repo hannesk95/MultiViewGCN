@@ -77,6 +77,8 @@ def main(fold, architecture, task, views, aggregation):
             folds_dict = torch.load("./data/ucsf/glioma_flair_grading_binary_folds.pt")
         case "headneck_ct_hpv_binary":
             folds_dict = torch.load("./data/headneck/headneck_ct_hpv_binary_folds.pt")
+        case "breast_mri_grading_binary":
+            folds_dict = torch.load("./data/breast/breast_mri_grading_binary_folds.pt")
         case _:
             raise ValueError(f"Given task '{task}' unkown!")
 
@@ -164,6 +166,16 @@ def main(fold, architecture, task, views, aggregation):
             case "headneck_ct_hpv_binary":
 
                 data = [file for file in glob(f"./data/headneck/converted_nii_merged/*/*graph-fibonacci-edge_attr*views{VIEWS}_*.pt")]
+
+                train_data = [file for file in data if any(subject in file for subject in train_subjects)]
+                test_data = [file for file in data if any(subject in file for subject in test_subjects)]
+        
+                train_val_data = MLPDataset(train_data)
+                test_data = MLPDataset(test_data)
+            
+            case "breast_mri_grading_binary":
+
+                data = [file for file in glob(f"./data/breast/duke_tumor_grading/*0000_graph-fibonacci-edge_attr*views{VIEWS}_*.pt")]
 
                 train_data = [file for file in data if any(subject in file for subject in train_subjects)]
                 test_data = [file for file in data if any(subject in file for subject in test_subjects)]
@@ -417,7 +429,8 @@ def main(fold, architecture, task, views, aggregation):
 if __name__ == "__main__":   
 
     for views in [1, 3, 8, 12, 16, 20, 24]:
-        for task in ["headneck_ct_hpv_binary", "glioma_flair_grading_binary", "glioma_t1c_grading_binary", "sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
+        # for task in ["headneck_ct_hpv_binary", "glioma_flair_grading_binary", "glioma_t1c_grading_binary", "sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
+        for task in ["breast_mri_grading_binary"]:
             for architecture in ["MLP"]:
                 # for aggregation in ["mean", "max", "sum", "MLP"]:
                 for aggregation in ["mean"]:
