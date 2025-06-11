@@ -606,7 +606,7 @@ class GNN(torch.nn.Module):
         return x
 
 class MLP(torch.nn.Module):
-    def __init__(self, input_dim: int = 384, num_classes: int = 2, aggregation: str = "mean", n_views = None):       
+    def __init__(self, input_dim: int = 384, hidden_dim: int = 32, num_layers: int = 3, num_classes: int = 2, aggregation: str = "mean", n_views = None):       
         super(MLP, self).__init__()
 
         self.input_dim = input_dim
@@ -624,29 +624,60 @@ class MLP(torch.nn.Module):
         self.bn1 = BatchNorm1d(32)
         self.linear2 = Linear(32, 32)
         self.bn2 = BatchNorm1d(32)
-        self.linear3 = Linear(32, num_classes)
+        self.linear3 = Linear(32, 32)
+        self.bn3 = BatchNorm1d(32)
+        self.linear_out = Linear(32, num_classes)
 
-    def forward(self, x):
+    # def forward_old(self, x):
 
-        # x = x.reshape(-1, self.n_views, self.input_dim)     # shape (batch_size, n_views, feature_dim)
-        x = x.permute(0, 2, 1)                              # shape (batch_size, feature_dim, n_views)
+    #     # x = x.reshape(-1, self.n_views, self.input_dim)     # shape (batch_size, n_views, feature_dim)
+    #     x = x.permute(0, 2, 1)                              # shape (batch_size, feature_dim, n_views)
+
+    #     match self.aggregation:
+    #         case "mean":
+    #             x = torch.mean(x, dim=-1)
+    #         case "sum":
+    #             x = torch.sum(x, dim=-1)
+    #         case "max":
+    #             x = torch.max(x, dim=-1)[0]
+    #         case "MLP":
+    #             x = self.aggregate(x)
+    #             x = x.squeeze(-1)
+            
+    #     # x = self.linear(x)
+
+    #     x = F.relu(self.bn1(self.linear1(x)))
+    #     x = F.relu(self.bn2(self.linear2(x)))
+    #     x = self.linear3(x)
+
+    #     return x        
+    
+    def forward(self, x):      
+
+        x = self.linear1(x)
+        x = x.permute(0, 2, 1)                            
+        x = F.relu(self.bn1(x))
+        x = x.permute(0, 2, 1)                            
+        
+        x = self.linear2(x)
+        x = x.permute(0, 2, 1)                           
+        x = F.relu(self.bn2(x))
+        x = x.permute(0, 2, 1)                             
+        
+        x = self.linear3(x)
+        x = x.permute(0, 2, 1)                             
+        x = F.relu(self.bn3(x))
+        x = x.permute(0, 2, 1)                              
 
         match self.aggregation:
             case "mean":
-                x = torch.mean(x, dim=-1)
+                x = torch.mean(x, dim=1)
             case "sum":
-                x = torch.sum(x, dim=-1)
+                x = torch.sum(x, dim=1)
             case "max":
-                x = torch.max(x, dim=-1)[0]
-            case "MLP":
-                x = self.aggregate(x)
-                x = x.squeeze(-1)
-            
-        # x = self.linear(x)
+                x = torch.max(x, dim=1)[0]      
 
-        x = F.relu(self.bn1(self.linear1(x)))
-        x = F.relu(self.bn2(self.linear2(x)))
-        x = self.linear3(x)
+        x = self.linear_out(x)
 
         return x        
     
