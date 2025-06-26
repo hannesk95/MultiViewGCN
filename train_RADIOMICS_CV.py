@@ -268,7 +268,7 @@ def train_classifier(task, model_type, score, current_fold, features="all"):
 
 if __name__ == "__main__":
 
-    for features in ["texture"]:
+    for features in ["all", "shape"]:
         for task in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary", "glioma_t1c_grading_binary", "glioma_flair_grading_binary"]:
             for model in ["rf", "svm"]:
                 for fold in range(5):  

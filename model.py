@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch_geometric.nn import global_mean_pool, global_add_pool, global_max_pool
-from torch_geometric.nn import GCNConv, SAGEConv, GATConv, GINConv, GMMConv, SplineConv, NNConv, CGConv, BatchNorm, GraphNorm
+from torch_geometric.nn import GCNConv, SAGEConv, GATConv, GINConv, GMMConv, SplineConv, NNConv, CGConv, BatchNorm, GraphNorm, SimpleConv, GraphConv
 from torch_geometric.nn.models import GCN, MLP
 import torch.nn.functional as F
 from torch.nn import Linear, Dropout, BatchNorm1d
@@ -24,6 +24,14 @@ from i3dense import I3DenseNet
 import inspect
 from torch_geometric.nn import GINConv, GINEConv
 from torch.nn import Linear, ReLU, Sequential, LeakyReLU
+import torch
+from torch_geometric.nn import SAGEConv
+from torch_geometric.utils import softmax
+from torch_geometric.typing import Adj, OptTensor
+from torch import Tensor
+from typing import Union, Tuple
+from torch_geometric.nn import MessagePassing
+from torch_geometric.nn.models import MLP as PyG_MLP
 
 
 
@@ -465,13 +473,7 @@ class CNN(torch.nn.Module):
     
 
     
-import torch
-from torch_geometric.nn import SAGEConv
-from torch_geometric.utils import softmax
-from torch_geometric.typing import Adj, OptTensor
-from torch import Tensor
-from typing import Union, Tuple
-from torch_geometric.nn import MessagePassing
+
 
 class SAGEConvWithEdgeAttr(MessagePassing):
     def __init__(self, in_channels, out_channels, edge_dim, flow, aggr='mean'):
@@ -515,161 +517,159 @@ class GNN(torch.nn.Module):
                  num_classes: int = 2,
                  num_layers:int = 3,
                  readout: Literal["mean", "sum", "max"] = "mean",
-                 hierarchical_readout: bool = False,
+                 hierarchical_readout: bool = True,
                  include_edge_attr: bool = False,
                  edge_attr_dim: int = 9, 
                  flow: Literal["source_to_target", "target_to_source"] = "target_to_source",):
            
-        super(GNN, self).__init__()       
+        super(GNN, self).__init__() 
 
-        self.hierarchical_readout = hierarchical_readout              
-        
-        match architecture:                    
-            case "GAT":
-                self.conv = GATConv
-            case "GINE":
-                self.conv = GINEConv
-            case "GMM":
-                self.conv = GMMConv
-            case "Spline":
-                self.conv = SplineConv
-            case "NN":
-                self.conv = NNConv
-            case "CG":
-                self.conv = CGConv
-            case "GCN":
-                self.conv = GCNConv
-            case "SAGE":
-                self.conv = SAGEConv
-            case "EdgeSAGE":
-                self.conv = SAGEConvWithEdgeAttr
-            case "GIN":
-                self.conv = GINConv  
-            case _:
-                raise ValueError("Given GNN architecture is not available!")                  
+        self.aggregate = aggregate
 
-        match readout:
-            case "mean":
-                self.pool = global_mean_pool
-            case "sum":
-                self.pool = global_add_pool
-            case "max":
-                self.pool = global_max_pool
-            case _:
-                raise ValueError(f"Invalid readout method: {readout}. Choose from 'mean', 'sum', or 'max'.")
-    
-        
-        self.edge_attr_is_available = True if "edge_attr" in inspect.signature(self.conv.forward).parameters.keys() else False
-        self.convs = torch.nn.ModuleList()
-        self.batch_norms = torch.nn.ModuleList()
+        if aggregate != None:      
 
-        for i in range(num_layers):
-            if i == 0:
-                if self.edge_attr_is_available:
-                    conv = self.conv(input_dim, hidden_dim, aggr=aggregate, flow=flow, edge_dim=edge_attr_dim)
-                else:
-                    conv = self.conv(input_dim, hidden_dim, aggr=aggregate, flow=flow)
-            else:
-                if self.edge_attr_is_available:
-                    conv = self.conv(hidden_dim, hidden_dim, aggr=aggregate, flow=flow, edge_dim=edge_attr_dim)
-                else:    
-                    conv = self.conv(hidden_dim, hidden_dim, aggr=aggregate, flow=flow)
+            self.hierarchical_readout = hierarchical_readout              
             
-            self.convs.append(conv)
-            self.batch_norms.append(BatchNorm(hidden_dim))
+            match architecture:                    
+                case "GAT":
+                    self.conv = GATConv
+                case "GINE":
+                    self.conv = GINEConv
+                case "GMM":
+                    self.conv = GMMConv
+                case "Spline":
+                    self.conv = SplineConv
+                case "NN":
+                    self.conv = NNConv
+                case "CG":
+                    self.conv = CGConv
+                case "GCN":
+                    self.conv = GCNConv
+                case "SAGE":
+                    self.conv = SAGEConv
+                case "EdgeSAGE":
+                    self.conv = SAGEConvWithEdgeAttr
+                case "GIN":
+                    self.conv = GINConv  
+                case _:
+                    raise ValueError("Given GNN architecture is not available!")                  
 
+            match readout:
+                case "mean":
+                    self.pool = global_mean_pool
+                case "sum":
+                    self.pool = global_add_pool
+                case "max":
+                    self.pool = global_max_pool
+                case _:
+                    raise ValueError(f"Invalid readout method: {readout}. Choose from 'mean', 'sum', or 'max'.")
         
-        self.linear = torch.nn.Linear(hidden_dim, num_classes) if not hierarchical_readout else torch.nn.Linear(hidden_dim*num_layers, num_classes)
+            
+            self.edge_attr_is_available = True if "edge_attr" in inspect.signature(self.conv.forward).parameters.keys() else False
+            self.convs = torch.nn.ModuleList()
+            self.batch_norms = torch.nn.ModuleList()
+
+            for i in range(num_layers):
+                if i == 0:
+                    if self.edge_attr_is_available:
+                        conv = self.conv(input_dim, hidden_dim, aggr=aggregate, flow=flow, edge_dim=edge_attr_dim)
+                    else:
+                        conv = self.conv(input_dim, hidden_dim, aggr=aggregate, flow=flow)
+                else:
+                    if self.edge_attr_is_available:
+                        conv = self.conv(hidden_dim, hidden_dim, aggr=aggregate, flow=flow, edge_dim=edge_attr_dim)
+                    else:    
+                        conv = self.conv(hidden_dim, hidden_dim, aggr=aggregate, flow=flow)
+                
+                self.convs.append(conv)
+                self.batch_norms.append(BatchNorm(hidden_dim))
+
+            
+            self.linear = torch.nn.Linear(hidden_dim, num_classes) if not hierarchical_readout else torch.nn.Linear(hidden_dim*num_layers, num_classes)
+        
+        else:
+            self.mlp = PyG_MLP([9216, hidden_dim, num_classes]) 
+
 
     def forward(self, data):
 
         x, edge_index, edge_attr, batch = data.x.to(torch.float32), data.edge_index.to(torch.long), data.edge_attr.to(torch.float32), data.batch
 
-        features = []
-        for conv, batch_norm in zip(self.convs, self.batch_norms):
-            if self.edge_attr_is_available:
-                x = F.relu(batch_norm(conv(x, edge_index, edge_attr)))
-            else:
-                x = F.relu(batch_norm(conv(x, edge_index)))
-            features.append(x)
+        if self.aggregate != None:           
+
+            # edge_index = torch.empty((2, 0), dtype=torch.long).cuda()
+
+            features = []
+            for conv, batch_norm in zip(self.convs, self.batch_norms):
+                if self.edge_attr_is_available:
+                    x = F.relu(batch_norm(conv(x, edge_index, edge_attr)))
+                else:
+                    x = F.relu(batch_norm(conv(x, edge_index)))
+                features.append(x)
+            
+            x = torch.cat(features, dim=-1) if self.hierarchical_readout else features[-1]
+
+            x = self.pool(x, batch)
+            x = self.linear(x)
         
-        # x = torch.cat(features, dim=0)
-        if self.hierarchical_readout:
-            x = torch.cat(features, dim=-1)
-
         else:
-            x = features[-1]
 
-        x = self.pool(x, batch)
-        x = self.linear(x)
+            x = x.view(-1, 24, 384)
+            x = x.view(x.shape[0], -1)
+            x = self.mlp(x)
+            # x = x.view()
+            # x = global_mean_pool(x, data.batch)
 
         return x
 
 class MLP(torch.nn.Module):
-    def __init__(self, input_dim: int = 384, hidden_dim: int = 32, num_layers: int = 3, num_classes: int = 2, aggregation: str = "mean", n_views = None):       
+    def __init__(self, 
+                 input_dim: int = 384, 
+                 hidden_dim: int = 32, 
+                 num_layers: int = 3, 
+                 num_classes: int = 2, 
+                 readout: str = "mean",
+                 hierarchical_readout: bool = False):       
         super(MLP, self).__init__()
 
         self.input_dim = input_dim
-        self.aggregation = aggregation
-        self.n_views = n_views
-        assert self.n_views is not None, "Number of views must be provided."
+        self.hidden_dim = hidden_dim
+        self.num_layers = num_layers
+        self.num_classes = num_classes
+        self.readout = readout
+        self.hierarchical_readout = hierarchical_readout
 
-        if self.aggregation == "MLP":             
-            self.aggregate = nn.Sequential(
-                    nn.Linear(self.n_views, 1),
-                    nn.ReLU())                
+        self.linear_layers = torch.nn.ModuleList()
+        self.bn_layers = torch.nn.ModuleList()
+        
 
-        # self.linear = Linear(self.input_dim, num_classes)
-        self.linear1 = Linear(self.input_dim, 32)
-        self.bn1 = BatchNorm1d(32)
-        self.linear2 = Linear(32, 32)
-        self.bn2 = BatchNorm1d(32)
-        self.linear3 = Linear(32, 32)
-        self.bn3 = BatchNorm1d(32)
-        self.linear_out = Linear(32, num_classes)
-
-    # def forward_old(self, x):
-
-    #     # x = x.reshape(-1, self.n_views, self.input_dim)     # shape (batch_size, n_views, feature_dim)
-    #     x = x.permute(0, 2, 1)                              # shape (batch_size, feature_dim, n_views)
-
-    #     match self.aggregation:
-    #         case "mean":
-    #             x = torch.mean(x, dim=-1)
-    #         case "sum":
-    #             x = torch.sum(x, dim=-1)
-    #         case "max":
-    #             x = torch.max(x, dim=-1)[0]
-    #         case "MLP":
-    #             x = self.aggregate(x)
-    #             x = x.squeeze(-1)
+        for i in range(num_layers):
+            if i == 0:
+                linear = Linear(self.input_dim, self.hidden_dim)
+            else:
+                linear = Linear(self.hidden_dim, self.hidden_dim)
             
-    #     # x = self.linear(x)
-
-    #     x = F.relu(self.bn1(self.linear1(x)))
-    #     x = F.relu(self.bn2(self.linear2(x)))
-    #     x = self.linear3(x)
-
-    #     return x        
+            self.linear_layers.append(linear)
+            self.bn_layers.append(BatchNorm(self.hidden_dim))
+            
+        
+        self.linear = torch.nn.Linear(hidden_dim, num_classes) if not self.hierarchical_readout else torch.nn.Linear(hidden_dim*num_layers, num_classes)    
+        
     
-    def forward(self, x):      
+    def forward(self, x):            
 
-        x = self.linear1(x)
-        x = x.permute(0, 2, 1)                            
-        x = F.relu(self.bn1(x))
-        x = x.permute(0, 2, 1)                            
-        
-        x = self.linear2(x)
-        x = x.permute(0, 2, 1)                           
-        x = F.relu(self.bn2(x))
-        x = x.permute(0, 2, 1)                             
-        
-        x = self.linear3(x)
-        x = x.permute(0, 2, 1)                             
-        x = F.relu(self.bn3(x))
-        x = x.permute(0, 2, 1)                              
+        features = []
+        for linear, batch_norm in zip(self.linear_layers, self.bn_layers):
 
-        match self.aggregation:
+            x = linear(x)
+            x = x.permute(0, 2, 1)        # shape (batch_size, feature_dim, n_views)
+            x = F.relu(batch_norm(x))
+            x = x.permute(0, 2, 1)        # shape (batch_size, n_views, feature_dim)              
+            features.append(x)                        
+
+        x = torch.cat(features, dim=-1) if self.hierarchical_readout else features[-1]  
+
+        match self.readout:
             case "mean":
                 x = torch.mean(x, dim=1)
             case "sum":
@@ -677,7 +677,79 @@ class MLP(torch.nn.Module):
             case "max":
                 x = torch.max(x, dim=1)[0]      
 
-        x = self.linear_out(x)
+        x = self.linear(x)
+
+        return x        
+
+from torch_geometric.nn import aggr
+
+class MPMLP(torch.nn.Module):
+    def __init__(self, 
+                 input_dim: int = 384, 
+                 hidden_dim: int = 32, 
+                 num_layers: int = 3, 
+                 num_classes: int = 2, 
+                 readout: str = "mean",
+                 hierarchical_readout: bool = True):       
+        super(MPMLP, self).__init__()
+
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        self.num_layers = num_layers
+        self.num_classes = num_classes
+        self.readout = readout
+        self.hierarchical_readout = hierarchical_readout
+
+        self.linear_layers = torch.nn.ModuleList()
+        self.bn_layers = torch.nn.ModuleList()
+        self.convs = torch.nn.ModuleList()
+
+        multi_aggr = aggr.MultiAggregation(
+            aggrs=['mean', 'std'],
+            mode='attn',
+            mode_kwargs=dict(in_channels=64, out_channels=64, num_heads=4)
+            )
+
+        for i in range(num_layers):
+            if i == 0:
+                linear = Linear(self.input_dim*3, self.hidden_dim)
+            else:
+                linear = Linear(self.hidden_dim*3, self.hidden_dim)
+            
+            self.linear_layers.append(linear)
+            self.bn_layers.append(BatchNorm(self.hidden_dim))
+            self.convs.append(SimpleConv(aggr=[aggr.SoftmaxAggregation(learn=True), "sum"], combine_root="cat"))
+        
+        self.linear = torch.nn.Linear(hidden_dim, num_classes) if not self.hierarchical_readout else torch.nn.Linear(hidden_dim*num_layers, num_classes)    
+        
+    
+    def forward(self, data):  
+
+        x, edge_index, edge_attr, batch = data.x.to(torch.float32), data.edge_index.to(torch.long), data.edge_attr.to(torch.float32), data.batch  
+
+        features = []
+        for linear, batch_norm, conv in zip(self.linear_layers, self.bn_layers, self.convs):
+
+            x = conv(x=x, edge_index=edge_index) 
+            x = linear(x)
+            # x = x.permute(0, 2, 1)        # shape (batch_size, feature_dim, n_views)
+            x = F.relu(batch_norm(x))
+            # x = x.permute(0, 2, 1)        # shape (batch_size, n_views, feature_dim)
+            # x = x + conv(x=x, edge_index=edge_index)              
+            features.append(x)                        
+
+        x = torch.cat(features, dim=-1) if self.hierarchical_readout else features[-1]  
+
+        match self.readout:
+            case "mean":
+                # x = torch.mean(x, dim=1)
+                x = global_mean_pool(x=x, batch=batch)
+            case "sum":
+                x = torch.sum(x, dim=1)
+            case "max":
+                x = torch.max(x, dim=1)[0]      
+
+        x = self.linear(x)
 
         return x        
     

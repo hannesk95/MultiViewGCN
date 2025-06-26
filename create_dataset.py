@@ -45,7 +45,6 @@ def pad_to_shape(array, target_shape):
     padded_array = np.pad(array, ((pad_top, pad_bottom), (pad_left, pad_right)), mode='constant')
     return padded_array
 
-
 def rescale_image(img: np.ndarray) -> np.ndarray:
     img = img - (np.min(img))
     img = img / (np.max(img))
@@ -660,6 +659,51 @@ def encode_largest_lesion_slice(volume: np.array, mask: np.array, image_processo
     
     return outputs, img_slice
 
+def extract_foreground_slices(volume, mask, processor, model, save_to_file=False):
+    """
+    Extracts all 2D slices along the last dimension of a 3D volume
+    where the corresponding binary mask has at least one foreground pixel.
+
+    Parameters:
+    - volume: 3D NumPy array (e.g., shape (H, W, D))
+    - mask:   3D NumPy array, same shape as volume
+
+    Returns:
+    - slices: List of 2D arrays from volume
+    - indices: List of slice indices that were extracted
+    """
+    assert volume.shape == mask.shape, "Volume and mask must have the same shape"
+    
+    slices = []
+    indices = []
+
+    for i in range(volume.shape[2]):  # iterate over last axis (e.g., D)
+        if np.any(mask[:, :, i] > 0):
+            slices.append(volume[:, :, i])
+            indices.append(i)
+
+    outputs_list = []
+    for idx, slice in enumerate(slices):
+        img_slice_temp = np.expand_dims(slice, axis=-1)
+
+        img_slice = np.concatenate([img_slice_temp, img_slice_temp, img_slice_temp], axis=-1)
+        img_slice = rescale_image(img=img_slice)
+        img_slice_pil = Image.fromarray(img_slice)
+
+        if save_to_file:
+            img_slice_pil.save(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/PIL_image_slices/slice_{str(idx).zfill(3)}.png")
+
+        inputs = processor(images=img_slice_pil, return_tensors="pt")
+        inputs = inputs.pixel_values.to("cuda")
+        outputs = model(inputs)
+        outputs = model.layernorm(outputs.pooler_output).detach().cpu()
+
+        outputs_list.append(outputs)  
+
+    features = torch.concatenate(outputs_list, dim=0)   
+
+    return features
+
 # @profile
 def main(args: argparse.Namespace):
 
@@ -726,16 +770,22 @@ def main(args: argparse.Namespace):
     assert len(img_list) == len(seg_list), "Number of images and segmentation masks are not the same!"
     print(f"[INFO] Number of images and masks found: {len(img_list)}")
 
-    if args.n_views > 3:
+    if args.n_views != "all_axial":
+        if args.n_views > 3:
 
-        vertices, faces = create_fibonacci_sphere(n_vertices=args.n_views, save_sphere=False)
-        rot_matrices = create_rotation_matrices(vertices=vertices)
-        adjacency_matrix, graph_edge_index = create_graph_topology(vertices=vertices, faces=faces)
+            vertices, faces = create_fibonacci_sphere(n_vertices=args.n_views, save_sphere=False)
+            rot_matrices = create_rotation_matrices(vertices=vertices)
+            adjacency_matrix, graph_edge_index = create_graph_topology(vertices=vertices, faces=faces)
+    
+        else:
+            rot_matrices = []
+            edge_index = None
+            edge_attr = None
     
     else:
-        rot_matrices = []
-        edge_index = None
-        edge_attr = None
+            rot_matrices = []
+            edge_index = None
+            edge_attr = None
 
     processor = AutoImageProcessor.from_pretrained(args.dinov2_model, use_fast=False)
     model = AutoModel.from_pretrained(args.dinov2_model).to("cuda")
@@ -783,7 +833,6 @@ def main(args: argparse.Namespace):
                 save_path = img_list[i].replace(".nii.gz", "_graph-fibonacci-edge_attr") + f"_views{args.n_views}_{model_name}.pt"
                 patient_id = os.path.basename(img_list[i]).replace(".nii.gz", "")[:8]
                    
-            
             subject = tio.Subject(
                 img = tio.ScalarImage(img_list[i]),
                 seg = tio.LabelMap(seg_list[i])
@@ -831,93 +880,98 @@ def main(args: argparse.Namespace):
         img_arr = subject_iso_pad.img.numpy()[0]
         seg_arr = subject_iso_pad.seg.numpy()[0]
 
-        outputs_list = []
-        encoding, _ = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
-                                               image_processor=processor, backbone=model, 
-                                               patient_id=patient_id, dataset_name=dataset_name)
-        outputs_list.append(encoding)
+        if args.n_views == "all_axial":
+            features = extract_foreground_slices(volume=img_arr, mask=seg_arr, processor=processor, model=model, save_to_file=True)
 
-        # if args.n_views == 3:
-        #     encoding, _ = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
-        #                                            image_processor=processor, backbone=model, 
-        #                                            patient_id=patient_id, dataset_name=dataset_name, axis=0)
-        #     outputs_list.append(encoding)
-
-        #     encoding, _ = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
-        #                                            image_processor=processor, backbone=model, 
-        #                                            patient_id=patient_id, dataset_name=dataset_name, axis=1)
-        #     outputs_list.append(encoding)
-        
-        if args.n_views == 3:
-            encoding, img_slice = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
-                                                   image_processor=processor, backbone=model, 
-                                                   patient_id=patient_id, dataset_name=dataset_name, axis=0)     
-
-            img_slice_0 = img_slice[:, :, 0]
-            img_slice_0_shape = img_slice_0.shape[0]      
-
-            encoding, img_slice = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
-                                                   image_processor=processor, backbone=model, 
-                                                   patient_id=patient_id, dataset_name=dataset_name, axis=1)         
-            img_slice_1 = img_slice[:, :, 0]  
-            img_slice_1_shape = img_slice_1.shape[0] 
-            
-            encoding, img_slice = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
-                                                   image_processor=processor, backbone=model, 
-                                                   patient_id=patient_id, dataset_name=dataset_name, axis=2)
-            img_slice_2 = img_slice[:, :, 0]  
-            img_slice_2_shape = img_slice_2.shape[0]  
-
-            target_shape = np.max([img_slice_0_shape, img_slice_1_shape, img_slice_2_shape])
-
-            img_slice_0_pad = pad_to_shape(img_slice_0, target_shape=(target_shape, target_shape))
-            img_slice_1_pad = pad_to_shape(img_slice_1, target_shape=(target_shape, target_shape))
-            img_slice_2_pad = pad_to_shape(img_slice_2, target_shape=(target_shape, target_shape))
-            img_slice_0 = np.expand_dims(img_slice_0_pad, axis=-1)
-            img_slice_1 = np.expand_dims(img_slice_1_pad, axis=-1)
-            img_slice_2 = np.expand_dims(img_slice_2_pad, axis=-1)
-
-            img_slice = np.concatenate([img_slice_0, img_slice_1, img_slice_2], axis=-1)
-            img_slice_pil = Image.fromarray(img_slice)
-            inputs = processor(images=img_slice_pil, return_tensors="pt")
-            inputs = inputs.pixel_values.to("cuda")
-            outputs = model(inputs)
-            outputs = model.layernorm(outputs.pooler_output).detach().cpu()
+        else:
 
             outputs_list = []
-            outputs_list.append(outputs)            
+            encoding, _ = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
+                                                image_processor=processor, backbone=model, 
+                                                patient_id=patient_id, dataset_name=dataset_name)
+            outputs_list.append(encoding)
 
+            # if args.n_views == 3:
+            #     encoding, _ = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
+            #                                            image_processor=processor, backbone=model, 
+            #                                            patient_id=patient_id, dataset_name=dataset_name, axis=0)
+            #     outputs_list.append(encoding)
 
-        for rot_matrix in tqdm(rot_matrices):
-            # img_arr_rotated = rotate_array_around_center(img_arr, rot_matrix, 1)
-            img_arr_rotated = rotate_3d_tensor_around_center(torch.tensor(img_arr, dtype=torch.float32).cuda(), torch.tensor(rot_matrix, dtype=torch.float32).cuda(), order=1, device='cuda')
-            # seg_arr_rotated = rotate_array_around_center(seg_arr, rot_matrix, 0)
-            seg_arr_rotated = rotate_3d_tensor_around_center(torch.tensor(seg_arr, dtype=torch.float32).cuda(), torch.tensor(rot_matrix, dtype=torch.float32).cuda(), order=0, device='cuda')
-
+            #     encoding, _ = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
+            #                                            image_processor=processor, backbone=model, 
+            #                                            patient_id=patient_id, dataset_name=dataset_name, axis=1)
+            #     outputs_list.append(encoding)
             
-            encoding, _ = encode_largest_lesion_slice(volume=img_arr_rotated, mask=seg_arr_rotated, 
-                                                   image_processor=processor, backbone=model, 
-                                                   patient_id=patient_id, dataset_name=dataset_name)
-            
-            outputs_list.append(encoding)      
+            if args.n_views == 3:
+                encoding, img_slice = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
+                                                    image_processor=processor, backbone=model, 
+                                                    patient_id=patient_id, dataset_name=dataset_name, axis=0)     
 
-        features = torch.concatenate(outputs_list, dim=0)   
+                img_slice_0 = img_slice[:, :, 0]
+                img_slice_0_shape = img_slice_0.shape[0]      
 
-        if args.n_views > 3:     
-            edge_index = to_undirected(graph_edge_index)
+                encoding, img_slice = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
+                                                    image_processor=processor, backbone=model, 
+                                                    patient_id=patient_id, dataset_name=dataset_name, axis=1)         
+                img_slice_1 = img_slice[:, :, 0]  
+                img_slice_1_shape = img_slice_1.shape[0] 
+                
+                encoding, img_slice = encode_largest_lesion_slice(volume=img_arr, mask=seg_arr, 
+                                                    image_processor=processor, backbone=model, 
+                                                    patient_id=patient_id, dataset_name=dataset_name, axis=2)
+                img_slice_2 = img_slice[:, :, 0]  
+                img_slice_2_shape = img_slice_2.shape[0]  
 
-            rot_matrices_temp = [np.eye(3)] + rot_matrices
+                target_shape = np.max([img_slice_0_shape, img_slice_1_shape, img_slice_2_shape])
 
-            edge_attr = []
-            for i in range(edge_index.shape[-1]):
-                edge = edge_index[:, i]
-                source = edge[0]
-                target = edge[1]
-                source_rot_matrix = rot_matrices_temp[source]
-                target_rot_matrix = rot_matrices_temp[target]
-                transition_matrix = target_rot_matrix @ source_rot_matrix.T
-                edge_attr.append(torch.from_numpy(transition_matrix.flatten()))
-            edge_attr = torch.stack(edge_attr, dim=0)
+                img_slice_0_pad = pad_to_shape(img_slice_0, target_shape=(target_shape, target_shape))
+                img_slice_1_pad = pad_to_shape(img_slice_1, target_shape=(target_shape, target_shape))
+                img_slice_2_pad = pad_to_shape(img_slice_2, target_shape=(target_shape, target_shape))
+                img_slice_0 = np.expand_dims(img_slice_0_pad, axis=-1)
+                img_slice_1 = np.expand_dims(img_slice_1_pad, axis=-1)
+                img_slice_2 = np.expand_dims(img_slice_2_pad, axis=-1)
+
+                img_slice = np.concatenate([img_slice_0, img_slice_1, img_slice_2], axis=-1)
+                img_slice_pil = Image.fromarray(img_slice)
+                inputs = processor(images=img_slice_pil, return_tensors="pt")
+                inputs = inputs.pixel_values.to("cuda")
+                outputs = model(inputs)
+                outputs = model.layernorm(outputs.pooler_output).detach().cpu()
+
+                outputs_list = []
+                outputs_list.append(outputs)            
+
+
+            for rot_matrix in tqdm(rot_matrices):
+                # img_arr_rotated = rotate_array_around_center(img_arr, rot_matrix, 1)
+                img_arr_rotated = rotate_3d_tensor_around_center(torch.tensor(img_arr, dtype=torch.float32).cuda(), torch.tensor(rot_matrix, dtype=torch.float32).cuda(), order=1, device='cuda')
+                # seg_arr_rotated = rotate_array_around_center(seg_arr, rot_matrix, 0)
+                seg_arr_rotated = rotate_3d_tensor_around_center(torch.tensor(seg_arr, dtype=torch.float32).cuda(), torch.tensor(rot_matrix, dtype=torch.float32).cuda(), order=0, device='cuda')
+
+                
+                encoding, _ = encode_largest_lesion_slice(volume=img_arr_rotated, mask=seg_arr_rotated, 
+                                                    image_processor=processor, backbone=model, 
+                                                    patient_id=patient_id, dataset_name=dataset_name)
+                
+                outputs_list.append(encoding)      
+
+            features = torch.concatenate(outputs_list, dim=0)   
+
+            if args.n_views > 3:     
+                edge_index = to_undirected(graph_edge_index)
+
+                rot_matrices_temp = [np.eye(3)] + rot_matrices
+
+                edge_attr = []
+                for i in range(edge_index.shape[-1]):
+                    edge = edge_index[:, i]
+                    source = edge[0]
+                    target = edge[1]
+                    source_rot_matrix = rot_matrices_temp[source]
+                    target_rot_matrix = rot_matrices_temp[target]
+                    transition_matrix = target_rot_matrix @ source_rot_matrix.T
+                    edge_attr.append(torch.from_numpy(transition_matrix.flatten()))
+                edge_attr = torch.stack(edge_attr, dim=0)
         
         if dataset_name in ["sarcoma_t1", "sarcoma_t2", "headneck", "glioma_t1", "glioma_t1c", "glioma_t2", "glioma_flair"]:
             df = pd.read_csv(args.label_csv)
@@ -960,8 +1014,9 @@ def main(args: argparse.Namespace):
      
 if __name__ == "__main__":    
 
-    for dataset in ["breast"]:
-        for views in [1, 3, 8, 12, 16, 20, 24]:
+    for dataset in ["sarcoma_t1", "sarcoma_t2", "glioma_t1c", "glioma_flair", "breast"]:
+        # for views in [1, 3, 8, 12, 16, 20, 24]:
+        for views in ["all_axial"]:
             
             parser = argparse.ArgumentParser()
             parser.add_argument("--dataset", default="sarcoma_t1", help="Name of dataset to be processed.", type=Path,

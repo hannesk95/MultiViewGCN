@@ -348,3 +348,20 @@ def create_cv_splits(task: str, seed: int = 28) -> None:
 
         case _:
             raise ValueError("Given task unkown!")
+
+
+def calculate_hidden_units(output_dim_enc: int, target_params: int = 98320) -> int:
+    """
+    Calculate the number of hidden units in the encoder based on the output dimension and target parameters.
+    
+    Args:
+        output_dim_enc (int): The output dimension of the encoder.
+        target_params (int): The target number of parameters for the encoder.
+        
+    Returns:
+        int: The calculated number of hidden units.
+    """
+    
+    num_params = (target_params // (output_dim_enc +  1)) + 1
+
+    return num_params

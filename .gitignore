@@ -17,4 +17,8 @@ pretrained_weights
 *.ipynb
 *.png
 *.csv
+*.nii.gz
+*.pt
+*.log
+*.torch
 conda.yaml

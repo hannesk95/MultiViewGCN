@@ -1,7 +1,7 @@
 import torch
 import mlflow
 import numpy as np
-from model import CNN, GNN
+from model import CNN, GNN, MPMLP
 from torch.amp import GradScaler
 from torch import autocast
 import os
@@ -192,8 +192,9 @@ def main(fold, architecture, task, views, readout, aggregation, hierarchical_rea
         test_loader = DataLoader(test_data, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
 
         # Define the model, loss function, and optimizer
-        # model = CNN(architecture=ARCHITECTURE, pretrained=PRETRAINED).to(device)
-        model = GNN(architecture=ARCHITECTURE, hierarchical_readout=HIERARCHICAL_READOUT, aggregate=AGGREGATION, readout=READOUT).to(device)
+        model = GNN(input_dim=384, hidden_dim=16, num_layers=1, num_classes=2, 
+                    architecture=ARCHITECTURE, aggregate=AGGREGATION, readout=READOUT).to(device)
+        # model = MPMLP(input_dim=384, hidden_dim=16, num_layers=1, num_classes=2, readout="mean").to(device)
         pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"Number of trainable parameters: {pytorch_total_params}")
         mlflow.log_param("num_trainable_params", pytorch_total_params)  
@@ -423,14 +424,17 @@ if __name__ == "__main__":
 
     if args.fold == -1:
 
-        for task in ["breast_mri_grading_binary"]:
+        # for task in ["glioma_t1c_grading_binary", "glioma_flair_grading_binary", "sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
+        # for task in ["glioma_t1c_grading_binary", "glioma_flair_grading_binary", "sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
             for architecture in ["SAGE"]:
                 for views in [8, 12, 16, 20, 24]:
-                    for readout in ["max"]:
-                        for aggregation in ["sum"]:
+                    # for readout in ["max", "mean"]:
+                    for readout in ["mean"]:
+                        # for aggregation in [["sum", "mean"], ["sum", "max"], ["mean", "max"], ["sum", "mean", "max"]]:
+                        for aggregation in [["mean", "max"]]:
                             for hierarchical_readout in [True]:
                                 for fold in range(FOLDS):    
-                                    mlflow.set_experiment(task+"_GNN")
+                                    mlflow.set_experiment(task+"_GNN_SAGE_MLP")
                                     mlflow.start_run()    
                                     main(fold, architecture, task, views, readout, aggregation, hierarchical_readout)
                                     mlflow.end_run()

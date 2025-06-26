@@ -127,8 +127,12 @@ class GNNDataset(Dataset):
         return sample
     
 class MLPDataset(Dataset):
-    def __init__(self, data: list):
+    def __init__(self, data: list, perspective: str = "spherical", n_views: int = 24):
         self.data = data
+        self.perspective = perspective
+        self.n_views = n_views
+
+        assert self.perspective in ["spherical", "axial"], "Perspective must be either 'spherical' or 'axial'."
 
     def __len__(self):
         return len(self.data)
@@ -138,7 +142,28 @@ class MLPDataset(Dataset):
         sample = torch.load(sample, weights_only=False)  
         
         x = sample.x
-        x = x.to(torch.float32)       
+        x = x.to(torch.float32)  
+
+        # edge_index = sample.edge_index
+        # edge_index = edge_index.to(torch.long)
+
+        if self.perspective == "axial":
+            middle_slice = x.shape[0] // 2
+
+            if (self.n_views == 1) or (self.n_views == 3):
+                x = x[(middle_slice - (self.n_views//2)):(middle_slice + (self.n_views//2))+1, :]
+            
+            else:
+                x = x[(middle_slice - (self.n_views//2)):(middle_slice + (self.n_views//2)), :]
+
+            if x.shape[0] != self.n_views:
+                pad_rows = self.n_views - x.shape[0]
+                pad_top = pad_rows // 2
+                pad_bottom = pad_rows - pad_top
+
+                top_padding = torch.zeros(pad_top, x.shape[1], device=x.device, dtype=x.dtype)
+                bottom_padding = torch.zeros(pad_bottom, x.shape[1], device=x.device, dtype=x.dtype)
+                x = torch.cat([top_padding, x, bottom_padding], dim=0)
 
         y = sample.label
         y = y.to(torch.long)

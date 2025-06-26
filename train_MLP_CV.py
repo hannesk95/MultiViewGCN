@@ -24,14 +24,12 @@ INITIAL_LR = 0.0
 TARGET_LR = 0.001
 SEED = 42
 FOLDS = 5
-AGGREGATION = "mean"
-VIEWS = 20
 
-def main(fold, architecture, task, views, aggregation):
+def main(fold, task, views, readout, perspective):
 
-    ARCHITECTURE = architecture
     VIEWS = views
-    AGGREGATION = aggregation
+    READOUT = readout
+    PERSPECTIVE = perspective
     
     # ----------------------------
     # Miscellaneous stuff
@@ -52,7 +50,8 @@ def main(fold, architecture, task, views, aggregation):
     mlflow.log_param("target_lr", TARGET_LR)
     mlflow.log_param("fold", fold)
     mlflow.log_param("views", VIEWS)
-    mlflow.log_param("aggregation", AGGREGATION)
+    mlflow.log_param("readout", READOUT)
+    mlflow.log_param("perspective", PERSPECTIVE)
     conda_yaml_path = save_conda_yaml()
     mlflow.log_artifact(conda_yaml_path)   
 
@@ -102,86 +101,88 @@ def main(fold, architecture, task, views, aggregation):
         mlflow.log_param("train_subjects", train_subjects)
         mlflow.log_param("test_subjects", test_subjects)
 
+        views = VIEWS if perspective == "spherical" else "all_axial"
+
         match task:
             case "sarcoma_t1_grading_binary":
 
-                data = [file for file in glob(f"./data/sarcoma/*/T1/*graph-fibonacci-edge_attr_views{VIEWS}_*.pt")]
+                data = [file for file in glob(f"./data/sarcoma/*/T1/*graph-fibonacci-edge_attr_views{views}_*.pt")]
 
                 train_data = [file for file in data if any(subject in file for subject in train_subjects)]
                 test_data = [file for file in data if any(subject in file for subject in test_subjects)]
         
-                train_val_data = MLPDataset(train_data)
-                test_data = MLPDataset(test_data)                
+                train_val_data = MLPDataset(train_data, perspective=PERSPECTIVE, n_views=VIEWS)
+                test_data = MLPDataset(test_data, perspective=PERSPECTIVE, n_views=VIEWS)                
 
             case "sarcoma_t2_grading_binary":
 
-                data = [file for file in glob(f"./data/sarcoma/*/T2/*graph-fibonacci-edge_attr_views{VIEWS}_*.pt")]
+                data = [file for file in glob(f"./data/sarcoma/*/T2/*graph-fibonacci-edge_attr_views{views}_*.pt")]
 
                 train_data = [file for file in data if any(subject in file for subject in train_subjects)]
                 test_data = [file for file in data if any(subject in file for subject in test_subjects)]
         
-                train_val_data = MLPDataset(train_data)
-                test_data = MLPDataset(test_data)
+                train_val_data = MLPDataset(train_data, perspective=PERSPECTIVE, n_views=VIEWS)
+                test_data = MLPDataset(test_data, perspective=PERSPECTIVE, n_views=VIEWS)
             
             case "glioma_flair_grading_binary":
 
-                data = [file for file in glob(f"./data/ucsf/glioma_four_sequences/*FLAIR_bias_graph-fibonacci-edge_attr_views{VIEWS}_*.pt")]
+                data = [file for file in glob(f"./data/ucsf/glioma_four_sequences/*FLAIR_bias_graph-fibonacci-edge_attr_views{views}_*.pt")]
 
                 train_data = [file for file in data if any(subject in file for subject in train_subjects)]
                 test_data = [file for file in data if any(subject in file for subject in test_subjects)]
         
-                train_val_data = MLPDataset(train_data)
-                test_data = MLPDataset(test_data)
+                train_val_data = MLPDataset(train_data, perspective=PERSPECTIVE, n_views=VIEWS)
+                test_data = MLPDataset(test_data, perspective=PERSPECTIVE, n_views=VIEWS)
             
             case "glioma_t1_grading_binary":
 
-                data = [file for file in glob(f"./data/ucsf/glioma_four_sequences/*T1_bias_graph-fibonacci-edge_attr_views{VIEWS}_*.pt")]
+                data = [file for file in glob(f"./data/ucsf/glioma_four_sequences/*T1_bias_graph-fibonacci-edge_attr_views{views}_*.pt")]
 
                 train_data = [file for file in data if any(subject in file for subject in train_subjects)]
                 test_data = [file for file in data if any(subject in file for subject in test_subjects)]
         
-                train_val_data = MLPDataset(train_data)
-                test_data = MLPDataset(test_data)
+                train_val_data = MLPDataset(train_data, perspective=PERSPECTIVE, n_views=VIEWS)
+                test_data = MLPDataset(test_data, perspective=PERSPECTIVE, n_views=VIEWS)
             
             case "glioma_t1c_grading_binary":
 
-                data = [file for file in glob(f"./data/ucsf/glioma_four_sequences/*T1c_bias_graph-fibonacci-edge_attr_views{VIEWS}_*.pt")]
+                data = [file for file in glob(f"./data/ucsf/glioma_four_sequences/*T1c_bias_graph-fibonacci-edge_attr_views{views}_*.pt")]
 
                 train_data = [file for file in data if any(subject in file for subject in train_subjects)]
                 test_data = [file for file in data if any(subject in file for subject in test_subjects)]
         
-                train_val_data = MLPDataset(train_data)
-                test_data = MLPDataset(test_data)
+                train_val_data = MLPDataset(train_data, perspective=PERSPECTIVE, n_views=VIEWS)
+                test_data = MLPDataset(test_data, perspective=PERSPECTIVE, n_views=VIEWS)
             
             case "glioma_t2_grading_binary":
 
-                data = [file for file in glob(f"./data/ucsf/glioma_four_sequences/*T2_bias_graph-fibonacci-edge_attr_views{VIEWS}_*.pt")]
+                data = [file for file in glob(f"./data/ucsf/glioma_four_sequences/*T2_bias_graph-fibonacci-edge_attr_views{views}_*.pt")]
 
                 train_data = [file for file in data if any(subject in file for subject in train_subjects)]
                 test_data = [file for file in data if any(subject in file for subject in test_subjects)]
         
-                train_val_data = MLPDataset(train_data)
-                test_data = MLPDataset(test_data)
+                train_val_data = MLPDataset(train_data, perspective=PERSPECTIVE, n_views=VIEWS)
+                test_data = MLPDataset(test_data, perspective=PERSPECTIVE, n_views=VIEWS)
             
             case "headneck_ct_hpv_binary":
 
-                data = [file for file in glob(f"./data/headneck/converted_nii_merged/*/*graph-fibonacci-edge_attr*views{VIEWS}_*.pt")]
+                data = [file for file in glob(f"./data/headneck/converted_nii_merged/*/*graph-fibonacci-edge_attr*views{views}_*.pt")]
 
                 train_data = [file for file in data if any(subject in file for subject in train_subjects)]
                 test_data = [file for file in data if any(subject in file for subject in test_subjects)]
         
-                train_val_data = MLPDataset(train_data)
-                test_data = MLPDataset(test_data)
+                train_val_data = MLPDataset(train_data, perspective=PERSPECTIVE, n_views=VIEWS)
+                test_data = MLPDataset(test_data, perspective=PERSPECTIVE, n_views=VIEWS)
             
             case "breast_mri_grading_binary":
 
-                data = [file for file in glob(f"./data/breast/duke_tumor_grading/*0000_graph-fibonacci-edge_attr*views{VIEWS}_*.pt")]
+                data = [file for file in glob(f"./data/breast/duke_tumor_grading/*0000_graph-fibonacci-edge_attr*views{views}_*.pt")]
 
                 train_data = [file for file in data if any(subject in file for subject in train_subjects)]
                 test_data = [file for file in data if any(subject in file for subject in test_subjects)]
         
-                train_val_data = MLPDataset(train_data)
-                test_data = MLPDataset(test_data)
+                train_val_data = MLPDataset(train_data, perspective=PERSPECTIVE, n_views=VIEWS)
+                test_data = MLPDataset(test_data, perspective=PERSPECTIVE, n_views=VIEWS)
 
         # Further split train_val into training and validation (80/20 split)
         train_size = int(0.8 * len(train_val_data))
@@ -198,7 +199,7 @@ def main(fold, architecture, task, views, aggregation):
         test_loader = DataLoader(test_data, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
 
         # Define the model, loss function, and optimizer
-        model = MLP(num_classes=2, aggregation=AGGREGATION, n_views=VIEWS).to(device)
+        model = MLP(input_dim=384, hidden_dim=16, num_layers=1, num_classes=2, readout=READOUT).to(device)
         pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"Number of trainable parameters: {pytorch_total_params}")
         mlflow.log_param("num_trainable_params", pytorch_total_params)  
@@ -428,14 +429,14 @@ def main(fold, architecture, task, views, aggregation):
 
 if __name__ == "__main__":   
 
-    for views in [1, 3, 8, 12, 16, 20, 24]:
-        # for task in ["headneck_ct_hpv_binary", "glioma_flair_grading_binary", "glioma_t1c_grading_binary", "sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
-        for task in ["breast_mri_grading_binary"]:
-            for architecture in ["MLP"]:
-                # for aggregation in ["mean", "max", "sum", "MLP"]:
-                for aggregation in ["mean"]:
-                    for fold in range(FOLDS):    
-                        mlflow.set_experiment(task+"_MLP")
-                        mlflow.start_run()    
-                        main(fold, architecture, task, views, aggregation)
-                        mlflow.end_run()
+    for perspective in ["axial", "spherical"]:
+        for views in [1, 3, 8, 12, 16, 20, 24]:
+            # for task in ["glioma_t1c_grading_binary"]:            
+            for task in ["glioma_flair_grading_binary", "glioma_t1c_grading_binary", "sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:            
+                    for readout in ["mean"]:
+                        for fold in range(FOLDS):    
+                            mlflow.set_experiment(task+"_MLP_axial&spherical")
+                            mlflow.start_run()    
+                            main(fold, task, views, readout, perspective)
+                            mlflow.end_run()
+ 
