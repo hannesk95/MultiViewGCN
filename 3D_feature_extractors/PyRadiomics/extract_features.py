@@ -64,12 +64,12 @@ def extract_features(dataset: str):
 
     for volume, mask in tqdm(zip(volumes, masks)):
 
-        if os.path.exists(f"{volume.replace('.nii.gz', '_PyRadiomics_features.pt')}"):
-            print(f"Skipping {volume}, already processed.")
-            continue
+        # if os.path.exists(f"{volume.replace('.nii.gz', '_PyRadiomics_features.pt')}"):
+        #     print(f"Skipping {volume}, already processed.")
+        #     continue
 
-        print(f"Image: {volume}")
-        print(f"Mask:  {mask}")
+        print(f"\nImage: {volume}")
+        print(f"Mask:  {mask}\n")
 
         
 
@@ -99,8 +99,8 @@ def extract_features(dataset: str):
             if key.startswith("original_"):
                 feature_vector.append(features[key].item())
 
-        feature_vector = np.array(feature_vector).reshape(1, -1)
-        feature_vector = normalize(feature_vector, norm='l2')
+        # feature_vector = np.array(feature_vector).reshape(1, -1)
+        # feature_vector = normalize(feature_vector, norm='l2')
         feature_vector = torch.tensor(feature_vector).view(1, -1)
 
         torch.save(feature_vector, f"{volume.replace('.nii.gz', '_PyRadiomics_features.pt')}")

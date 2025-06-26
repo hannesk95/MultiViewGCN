@@ -16,7 +16,6 @@ from sklearn.metrics import balanced_accuracy_score, matthews_corrcoef, roc_auc_
 import uuid
 import re
 
-
 EPOCHS = 300
 BATCH_SIZE = 16
 WARMUP_EPOCHS = 100
@@ -52,6 +51,8 @@ def train(task: str, method: str, fold: int):
             input_dim = 768
         case "VoCo":
             input_dim = 320
+        case "PyRadiomics":
+            input_dim = 107
         case _:
             raise ValueError(f"Given method '{method}' unknown!")    
 
@@ -81,6 +82,14 @@ def train(task: str, method: str, fold: int):
         case "breast_mri_grading_binary":
             data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/breast/duke_tumor_grading/*{method}*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/breast/breast_mri_grading_binary_folds.pt")
+        
+        case "kidney_ct_grading_binary":
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/kidney/converted_nii/*{method}*.pt")]
+            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/kidney/kidney_ct_grading_binary_folds.pt")
+        
+        case "liver_ct_riskscore_binary":
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/converted_nii/*{method}*.pt")]
+            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/liver_ct_riskscore_binary_folds.pt")
         
         case _:
             raise ValueError(f"Given task '{task}' unkown!")
@@ -194,9 +203,9 @@ def train(task: str, method: str, fold: int):
             train_score_list = []
             for batch_data in train_loader:
                 
-                X = batch_data[0].to("cuda" if torch.cuda.is_available() else "cpu")
+                X = batch_data[0].to(torch.float32).to("cuda" if torch.cuda.is_available() else "cpu")
                 X = torch.squeeze(X, dim=1)  # Remove the channel dimension if it exists
-                y = batch_data[1].to("cuda" if torch.cuda.is_available() else "cpu")
+                y = batch_data[1].to(torch.long).to("cuda" if torch.cuda.is_available() else "cpu")
                 
                 optimizer.zero_grad()            
 
@@ -232,9 +241,9 @@ def train(task: str, method: str, fold: int):
             with torch.no_grad():           
                 for val_data in val_loader:
                     
-                    X_val = val_data[0].to("cuda" if torch.cuda.is_available() else "cpu")
+                    X_val = val_data[0].to(torch.float32).to("cuda" if torch.cuda.is_available() else "cpu")
                     X_val = torch.squeeze(X_val, dim=1)  # Remove the channel dimension if it exists
-                    y_val = val_data[1].to("cuda" if torch.cuda.is_available() else "cpu")
+                    y_val = val_data[1].to(torch.long).to("cuda" if torch.cuda.is_available() else "cpu")
 
                     val_output = model(X_val)
                     loss = loss_fn(val_output, y_val)
@@ -347,9 +356,9 @@ def train(task: str, method: str, fold: int):
         with torch.no_grad():           
             for test_data in test_loader:
                 
-                X_test = test_data[0].to("cuda" if torch.cuda.is_available() else "cpu")
+                X_test = test_data[0].to(torch.float32).to("cuda" if torch.cuda.is_available() else "cpu")
                 X_test = torch.squeeze(X_test, dim=1)  # Remove the channel dimension if it exists
-                y_test = test_data[1].to("cuda" if torch.cuda.is_available() else "cpu")
+                y_test = test_data[1].to(torch.long).to("cuda" if torch.cuda.is_available() else "cpu")
 
                 test_output = model(X_test)
                 loss = loss_fn(test_output, y_test)
@@ -386,11 +395,16 @@ def train(task: str, method: str, fold: int):
 
 if __name__ == "__main__":
     
-    for task in ["headneck_ct_hpv_binary", "breast_mri_grading_binary", "glioma_t1c_grading_binary", "glioma_flair_grading_binary", "sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
-        for method in ["FMCIB", "ModelsGenesis", "SwinUNETR", "VISTA3D", "VoCo"]:
+    for task in ["kidney_ct_grading_binary", "liver_ct_riskscore_binary",
+                 "headneck_ct_hpv_binary", "breast_mri_grading_binary", 
+                 "glioma_t1c_grading_binary", "glioma_flair_grading_binary", 
+                 "sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
+        for method in ["PyRadiomics", "FMCIB", "ModelsGenesis", "SwinUNETR", "VISTA3D", "VoCo"]:
             for fold in range(FOLDS):
 
                 mlflow.set_experiment(task+"_"+method)
                 mlflow.start_run()    
                 train(task=task, method=method, fold=fold)
                 mlflow.end_run()
+
+                

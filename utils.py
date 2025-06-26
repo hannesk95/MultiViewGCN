@@ -342,6 +342,82 @@ def create_cv_splits(task: str, seed: int = 28) -> None:
 
                 torch.save(dict_folds, save_path)
                 print("CV Splits saved successfully!")
+        
+        case "kidney_ct_grading_binary":
+            save_path = f"./data/kidney/{task}_folds.pt"
+            if not os.path.exists(save_path):
+                dirs = sorted(glob("./data/kidney/converted_nii/*segmentation.nii.gz"))
+                subjects = [os.path.basename(d).replace("_segmentation.nii.gz", "") for d in dirs]
+
+                labels = []
+                df = pd.read_csv("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/kidney/C4KC-KiTS_Clinical-Data_Version-1.csv")
+                df = df.dropna(subset=["tumor_isup_grade"])
+
+                final_subjects = []
+                for subject in subjects:
+                    try:
+                        grade = df[df["patient_id"] == subject]["tumor_isup_grade"].item()
+                        labels.append(0 if grade <= 2 else 1)
+                        final_subjects.append(subject)
+                    except ValueError:
+                        continue
+                subjects = final_subjects
+
+                skfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+
+                dict_folds = {}
+                for fold, (train_idx, test_idx) in enumerate(skfold.split(subjects, labels)):
+                    train_subjects = [subjects[i] for i in train_idx]
+                    train_labels = [labels[i] for i in train_idx]
+                    test_subjects = [subjects[i] for i in test_idx]
+                    test_labels = [labels[i] for i in test_idx]
+
+                    dict_folds[fold] = {"train_subjects": train_subjects,
+                                        "train_labels": train_labels,
+                                        "test_subjects": test_subjects,
+                                        "test_labels": test_labels
+                                        }
+
+                torch.save(dict_folds, save_path)
+                print("CV Splits saved successfully!")
+        
+        case "liver_ct_riskscore_binary":
+            save_path = f"./data/liver/{task}_folds.pt"
+            if not os.path.exists(save_path):
+                dirs = sorted(glob("./data/liver/converted_nii/*segmentation.nii.gz"))
+                subjects = [os.path.basename(d).replace("_segmentation.nii.gz", "") for d in dirs]
+
+                labels = []
+                df = pd.read_excel("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/Colorectal-Liver-Metastases-Clinical-data-April-2023.xlsx")
+                df = df[df['clinrisk_stratified'] != -999]
+
+                final_subjects = []
+                for subject in subjects:
+                    try:
+                        risk_score = df[df["Patient-ID"] == subject]["clinrisk_stratified"].item()
+                        labels.append(risk_score)
+                        final_subjects.append(subject)
+                    except ValueError:
+                        continue
+                subjects = final_subjects
+
+                skfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+
+                dict_folds = {}
+                for fold, (train_idx, test_idx) in enumerate(skfold.split(subjects, labels)):
+                    train_subjects = [subjects[i] for i in train_idx]
+                    train_labels = [labels[i] for i in train_idx]
+                    test_subjects = [subjects[i] for i in test_idx]
+                    test_labels = [labels[i] for i in test_idx]
+
+                    dict_folds[fold] = {"train_subjects": train_subjects,
+                                        "train_labels": train_labels,
+                                        "test_subjects": test_subjects,
+                                        "test_labels": test_labels
+                                        }
+
+                torch.save(dict_folds, save_path)
+                print("CV Splits saved successfully!")
             
             else:
                 print("CV Splits already exist.")
