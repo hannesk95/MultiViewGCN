@@ -31,7 +31,7 @@ def get_foreground_extent(mask: torch.Tensor, margin: float = 1.1):
     if foreground_voxels.numel() == 0:
         raise ValueError("Mask contains no foreground voxels.")
 
-    z_coords, y_coords, x_coords = foreground_voxels[:, 0], foreground_voxels[:, 1], foreground_voxels[:, 2]
+    x_coords, y_coords, z_coords = foreground_voxels[:, 0], foreground_voxels[:, 1], foreground_voxels[:, 2]
 
     x_dim = x_coords.max().item() - x_coords.min().item() + 1
     y_dim = y_coords.max().item() - y_coords.min().item() + 1
@@ -41,7 +41,7 @@ def get_foreground_extent(mask: torch.Tensor, margin: float = 1.1):
     y_dim = int(y_dim * margin)
     z_dim = int(z_dim * margin)
 
-    z_dim = np.max([z_dim, 30])
+    z_dim = mask.shape[0]
 
     return (x_dim, y_dim, z_dim)
 
@@ -88,9 +88,9 @@ def extract_planar_features(dataset, model_name, views):
         
     for volume, mask in zip(volumes, masks):
 
-        # if os.path.exists(f"{volume.replace('.nii.gz', f'_{model_name}_{str(views).zfill(2)}views_planar_features.pt')}"):
-        #     print(f"Skipping {volume}, features already extracted.")
-        #     continue
+        if os.path.exists(f"{volume.replace('.nii.gz', f'_{model_name}_{str(views).zfill(2)}views_planar_features.pt')}"):
+            print(f"Skipping {volume}, features already extracted.")
+            continue
 
         img = tio.ScalarImage(volume)
         seg = tio.LabelMap(mask)
@@ -105,12 +105,16 @@ def extract_planar_features(dataset, model_name, views):
         subject = tio.ToCanonical()(subject)
         subject = tio.Resample((1.0, 1.0, 1.0))(subject)
 
-        x_dim, y_dim, z_dim = get_foreground_extent(mask=subject.mask.tensor[0])
-
-        subject = tio.CropOrPad(target_shape=(x_dim, y_dim, z_dim), mask_name="mask")(subject)
-
-        max_dim = np.max(subject.image.shape)
-        subject = tio.CropOrPad((max_dim, max_dim, max_dim))(subject)
+        if views != 3:
+            x_dim, y_dim, z_dim = get_foreground_extent(mask=subject.mask.tensor[0])
+            subject = tio.CropOrPad(target_shape=(x_dim, y_dim, z_dim), mask_name="mask")(subject)
+            max_dim = np.max([x_dim, y_dim])
+            subject = tio.CropOrPad((max_dim, max_dim, z_dim))(subject)
+        
+        elif views == 3:
+            subject = tio.CropOrPad(mask_name="mask")(subject)
+            max_dim = np.max(subject.image.shape)
+            subject = tio.CropOrPad((max_dim, max_dim, max_dim))(subject)
 
         img_tensor = subject.image.tensor[0]
         seg_tensor = subject.mask.tensor[0]
@@ -151,6 +155,46 @@ def extract_planar_features(dataset, model_name, views):
         print(f"Processed {volume} with features shape: {features.shape}")
 
 
+def extract_planar_feature_views(dataset, model, views, reference):
+
+    match dataset:
+        case "glioma_t1c_grading_binary":
+            features = sorted(glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*T1c*{model}_{reference}views_planar_features.pt"))
+        case "glioma_flair_grading_binary":
+            features = sorted(glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*FLAIR*{model}_{reference}views_planar_features.pt"))
+        case "sarcoma_t1_grading_binary":
+            features = sorted(glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/*/T1/*{model}_{reference}views_planar_features.pt"))
+        case "sarcoma_t2_grading_binary":
+            features = sorted(glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/*/T2/*{model}_{reference}views_planar_features.pt"))
+        case "breast_mri_grading_binary":
+            features = sorted(glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/breast/duke_tumor_grading/*{model}_{reference}views_planar_features.pt"))
+        case "headneck_ct_hpv_binary":
+            features = sorted(glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/headneck/converted_nii_merged/*/*{model}_{reference}views_planar_features.pt")) 
+        case "kidney_ct_grading_binary":
+            features = sorted(glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/kidney/converted_nii/*{model}_{reference}views_planar_features.pt")) 
+        case "liver_ct_riskscore_binary":
+            features = sorted(glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/converted_nii/*{model}_{reference}views_planar_features.pt"))  
+        case _:
+            raise ValueError(f"Unknown dataset: {dataset}")
+        
+    
+    for feature in features:
+
+        temp = torch.load(feature, weights_only=False)
+
+        middle_idx = temp.shape[0]//2
+        upper_end = middle_idx + views//2
+        lower_end = middle_idx - views//2
+
+        if views % 2 == 1:
+            upper_end = upper_end + 1
+
+        temp = temp[lower_end:upper_end, :]
+
+        print(feature)
+        print(f"Saved:  {feature.replace(f'{reference}views', f'{str(views).zfill(2)}views')}, with shape: {temp.shape}")
+        torch.save(temp, feature.replace(f"{reference}views", f"{str(views).zfill(2)}views"))
+
 if __name__ == "__main__":
     
     for dataset in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary", 
@@ -158,6 +202,15 @@ if __name__ == "__main__":
                     "breast_mri_grading_binary", "headneck_ct_hpv_binary", 
                     "kidney_ct_grading_binary", "liver_ct_riskscore_binary"]:
         for model in ["DINOv2"]:
-            for views in [1, 3, 8, 12, 16, 20, 24]:
+            for views in [3, 24]:
                 extract_planar_features(dataset, model, views)
 
+
+    for dataset in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary", 
+                    "glioma_t1c_grading_binary", "glioma_flair_grading_binary", 
+                    "breast_mri_grading_binary", "headneck_ct_hpv_binary", 
+                    "kidney_ct_grading_binary", "liver_ct_riskscore_binary"]:
+        for model in ["DINOv2"]:
+            for reference in [24]:
+                for views in [1, 8, 12, 16, 20]:
+                        extract_planar_feature_views(dataset, model, views, reference)
