@@ -2,11 +2,12 @@ import sys
 sys.path.append("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/")
 import mlflow
 from utils import seed_everything, create_cv_splits, calculate_hidden_units
-from model_FE import MLP
+from model_FE import MLP, GNN
 import torch
 from glob import glob
-from dataset_FE import FeatureExtractorDataset
+from dataset_FE import PlanarDatasetMLP, SphericalDatasetGNN, SphericalDatasetMLP
 from torch.utils.data import DataLoader
+from torch_geometric.loader import DataLoader as PyGDataLoader
 import numpy as np
 from sklearn.utils.class_weight import compute_class_weight
 from torch.amp import GradScaler
@@ -25,7 +26,14 @@ SEED = 42
 FOLDS = 5
 READOUT = "mean"
 
-def train(task: str, method: str, fold: int, views: int ):
+def train(task: str, method: str, fold: int, views: int, architecture: str, head_size: int):
+
+    if (views in [1, 3]) and ("spherical" in architecture):
+        print(f"Skipping task {task} with method {method} and architecture {architecture} for {views} views, as spherical GNN is not supported for these views.")
+        return 0
+    
+    perspective = architecture.split("_")[0]
+    nn_architecture = architecture.split("_")[1]
 
     identifier = str(uuid.uuid4())
     seed_everything(SEED)
@@ -40,6 +48,10 @@ def train(task: str, method: str, fold: int, views: int ):
     mlflow.log_param("readout", READOUT)
     mlflow.log_param("folds", FOLDS)
     mlflow.log_param("views", views)
+    mlflow.log_param("architecture", architecture)
+    mlflow.log_param("perspective", perspective)
+    mlflow.log_param("nn_architecture", nn_architecture)
+    mlflow.log_param("head_size", head_size)
 
     match method:
         case "DINOv2":
@@ -51,35 +63,35 @@ def train(task: str, method: str, fold: int, views: int ):
 
     match task:
         case "sarcoma_t1_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/*/T1/*{method}_{str(views).zfill(2)}views_planar*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/*/T1/*{method}_{str(views).zfill(2)}views_{perspective}*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/sarcoma_t1_grading_binary_folds.pt")
             
         case "sarcoma_t2_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/*/T2/*{method}_{str(views).zfill(2)}views_planar*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/*/T2/*{method}_{str(views).zfill(2)}views_{perspective}*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/sarcoma_t2_grading_binary_folds.pt")       
         
         case "glioma_t1c_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*T1c*{method}_{str(views).zfill(2)}views_planar*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*T1c*{method}_{str(views).zfill(2)}views_{perspective}*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_t1c_grading_binary_folds.pt")
         
         case "glioma_flair_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*FLAIR*{method}_{str(views).zfill(2)}views_planar*.pt")] 
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*FLAIR*{method}_{str(views).zfill(2)}views_{perspective}*.pt")] 
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_flair_grading_binary_folds.pt")
         
         case "headneck_ct_hpv_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/headneck/converted_nii_merged/*/*{method}_{str(views).zfill(2)}views_planar*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/headneck/converted_nii_merged/*/*{method}_{str(views).zfill(2)}views_{perspective}*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/headneck/headneck_ct_hpv_binary_folds.pt")
         
         case "breast_mri_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/breast/duke_tumor_grading/*{method}_{str(views).zfill(2)}views_planar*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/breast/duke_tumor_grading/*{method}_{str(views).zfill(2)}views_{perspective}*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/breast/breast_mri_grading_binary_folds.pt")
         
         case "kidney_ct_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/kidney/converted_nii/*{method}_{str(views).zfill(2)}views_planar*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/kidney/converted_nii/*{method}_{str(views).zfill(2)}views_{perspective}*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/kidney/kidney_ct_grading_binary_folds.pt")
         
         case "liver_ct_riskscore_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/converted_nii/*{method}_{str(views).zfill(2)}views_planar*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/converted_nii/*{method}_{str(views).zfill(2)}views_{perspective}*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/liver_ct_riskscore_binary_folds.pt")
         
         case _:
@@ -130,10 +142,20 @@ def train(task: str, method: str, fold: int, views: int ):
             # assert len(index) < 2, f"Found multiple indices for subject {subject} in data: {index}"
 
             test_data.append(item[0])
-            test_labels_list.append(test_labels[index[0]])               
+            test_labels_list.append(test_labels[index[0]]) 
 
-        train_val_data = FeatureExtractorDataset(train_data, train_labels_list)
-        test_data = FeatureExtractorDataset(test_data, test_labels_list)  
+        match architecture:
+            case "planar_MLP":
+                train_val_data = PlanarDatasetMLP(train_data, train_labels_list)
+                test_data = PlanarDatasetMLP(test_data, test_labels_list)  
+            case "spherical_MLP":
+                train_val_data = SphericalDatasetMLP(train_data, train_labels_list)
+                test_data = SphericalDatasetMLP(test_data, test_labels_list)
+            case "spherical_GNN":
+                train_val_data = SphericalDatasetGNN(train_data, train_labels_list)
+                test_data = SphericalDatasetGNN(test_data, test_labels_list)
+            case _:
+                raise ValueError(f"Given architecture '{architecture}' unknown!")
 
         # Further split train_val into training and validation (80/20 split)
         train_size = int(0.8 * len(train_val_data))
@@ -145,13 +167,24 @@ def train(task: str, method: str, fold: int, views: int ):
         print(f"Number of test samples:  {str(len(test_data)).zfill(4)}")
 
         # Create DataLoader
-        train_loader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
-        val_loader = DataLoader(val_data, batch_size=BATCH_SIZE, shuffle=False, drop_last=False)
-        test_loader = DataLoader(test_data, batch_size=BATCH_SIZE, shuffle=False, drop_last=False)
+        if "GNN" in architecture:
+            train_loader = PyGDataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
+            val_loader = PyGDataLoader(val_data, batch_size=BATCH_SIZE, shuffle=False, drop_last=False)
+            test_loader = PyGDataLoader(test_data, batch_size=BATCH_SIZE, shuffle=False, drop_last=False)
+        else:
+            # For MLP, we can use the standard DataLoader
+            train_loader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
+            val_loader = DataLoader(val_data, batch_size=BATCH_SIZE, shuffle=False, drop_last=False)
+            test_loader = DataLoader(test_data, batch_size=BATCH_SIZE, shuffle=False, drop_last=False)
 
-        num_hidden_units = calculate_hidden_units(output_dim_enc=input_dim)
+        num_hidden_units = calculate_hidden_units(output_dim_enc=input_dim, target_params=head_size)
 
-        model = MLP(input_dim=input_dim, hidden_dim=num_hidden_units, num_layers=1, num_classes=2, readout=READOUT)
+        if  nn_architecture == "MLP":
+            model = MLP(input_dim=input_dim, hidden_dim=num_hidden_units, num_layers=1, num_classes=2, readout=READOUT)
+        elif nn_architecture == "GNN":
+            model = GNN(input_dim=384, hidden_dim=43, num_layers=1, num_classes=2, readout=READOUT)
+        else:
+            raise ValueError(f"Given architecture '{nn_architecture}' unknown!")
         model = model.to("cuda" if torch.cuda.is_available() else "cpu")
         pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"Number of trainable parameters: {pytorch_total_params}")
@@ -193,9 +226,13 @@ def train(task: str, method: str, fold: int, views: int ):
             train_pred_list = []
             train_score_list = []
             for batch_data in train_loader:
+
+                if "GNN" in architecture:
+                    X = batch_data[0].to("cuda" if torch.cuda.is_available() else "cpu")
+                else:
+                    X = batch_data[0].to(torch.float32).to("cuda" if torch.cuda.is_available() else "cpu")
+                    X = torch.squeeze(X, dim=1)  # Remove the channel dimension if it exists
                 
-                X = batch_data[0].to(torch.float32).to("cuda" if torch.cuda.is_available() else "cpu")
-                X = torch.squeeze(X, dim=1)  # Remove the channel dimension if it exists
                 y = batch_data[1].to(torch.long).to("cuda" if torch.cuda.is_available() else "cpu")
                 
                 optimizer.zero_grad()            
@@ -231,9 +268,13 @@ def train(task: str, method: str, fold: int, views: int ):
             val_score_list = []
             with torch.no_grad():           
                 for val_data in val_loader:
-                    
-                    X_val = val_data[0].to(torch.float32).to("cuda" if torch.cuda.is_available() else "cpu")
-                    X_val = torch.squeeze(X_val, dim=1)  # Remove the channel dimension if it exists
+
+                    if "GNN" in architecture:
+                        X_val = val_data[0].to("cuda" if torch.cuda.is_available() else "cpu")
+                    else:
+                        X_val = val_data[0].to(torch.float32).to("cuda" if torch.cuda.is_available() else "cpu")
+                        X_val = torch.squeeze(X_val, dim=1)  # Remove the channel dimension if it exists
+
                     y_val = val_data[1].to(torch.long).to("cuda" if torch.cuda.is_available() else "cpu")
 
                     val_output = model(X_val)
@@ -346,9 +387,12 @@ def train(task: str, method: str, fold: int, views: int ):
         test_score_list = []
         with torch.no_grad():           
             for test_data in test_loader:
+                if "GNN" in architecture:
+                    X_test = test_data[0].to("cuda" if torch.cuda.is_available() else "cpu")
+                else:               
+                    X_test = test_data[0].to(torch.float32).to("cuda" if torch.cuda.is_available() else "cpu")
+                    X_test = torch.squeeze(X_test, dim=1)  # Remove the channel dimension if it exists
                 
-                X_test = test_data[0].to(torch.float32).to("cuda" if torch.cuda.is_available() else "cpu")
-                X_test = torch.squeeze(X_test, dim=1)  # Remove the channel dimension if it exists
                 y_test = test_data[1].to(torch.long).to("cuda" if torch.cuda.is_available() else "cpu")
 
                 test_output = model(X_test)
@@ -385,18 +429,21 @@ def train(task: str, method: str, fold: int, views: int ):
 
 
 if __name__ == "__main__":
-    
-    for task in ["kidney_ct_grading_binary", "liver_ct_riskscore_binary",
-                 "headneck_ct_hpv_binary", "breast_mri_grading_binary", 
-                 "glioma_t1c_grading_binary", "glioma_flair_grading_binary", 
-                 "sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
-        for method in ["DINOv2"]:
-            for views in [1, 3, 8, 12, 16, 20, 24]:
-                for fold in range(FOLDS):
 
-                    mlflow.set_experiment(task+"_"+method+"_MLP_planar")
-                    mlflow.start_run()    
-                    train(task=task, method=method, fold=fold, views=views)
-                    mlflow.end_run()
+
+    for head_size in [50000]:
+        for task in ["kidney_ct_grading_binary", "liver_ct_riskscore_binary",
+                    "headneck_ct_hpv_binary", "breast_mri_grading_binary", 
+                    "glioma_t1c_grading_binary", "glioma_flair_grading_binary", 
+                    "sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
+            for method in ["DINOv2"]:
+                for architecture in ["spherical_GNN", "planar_MLP", "spherical_MLP"]:
+                    for views in [1, 3, 8, 12, 16, 20, 24]:
+                        for fold in range(FOLDS):
+
+                            mlflow.set_experiment(task+"_"+method+"_"+architecture)
+                            mlflow.start_run()    
+                            train(task=task, method=method, fold=fold, views=views, architecture=architecture, head_size=head_size)
+                            mlflow.end_run()
 
                 

@@ -71,6 +71,10 @@ def extract_features(dataset: str):
             files = [file for file in glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/converted_nii/*.nii.gz")]
             volumes = sorted([file for file in files if not "segmentation" in file])
             masks = sorted([file for file in files if "segmentation" in file])  
+        case "liver_ct_grading_binary":
+            files = [file for file in glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/HCC_CHCC_C2/*.nii.gz")]
+            volumes = sorted([file for file in files if not "mask" in file])
+            masks = sorted([file for file in files if "mask" in file])  
         case _:
             raise ValueError(f"Unknown dataset: {dataset}")    
 
@@ -117,8 +121,9 @@ def extract_features(dataset: str):
 
 if __name__ == "__main__":
 
-    for dataset in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary", 
-                    "glioma_t1c_grading_binary", "glioma_flair_grading_binary", 
-                    "breast_mri_grading_binary", "headneck_ct_hpv_binary", 
-                    "kidney_ct_grading_binary", "liver_ct_riskscore_binary"]:
+    for dataset in ["liver_ct_grading_binary"]:
+    # for dataset in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary", 
+    #                 "glioma_t1c_grading_binary", "glioma_flair_grading_binary", 
+    #                 "breast_mri_grading_binary", "headneck_ct_hpv_binary", 
+    #                 "kidney_ct_grading_binary", "liver_ct_riskscore_binary"]:
         extract_features(dataset=dataset)

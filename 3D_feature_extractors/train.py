@@ -25,7 +25,7 @@ SEED = 42
 FOLDS = 5
 READOUT = "mean"
 
-def train(task: str, method: str, fold: int):
+def train(task: str, method: str, fold: int, head_size: int):
 
     identifier = str(uuid.uuid4())
     seed_everything(SEED)
@@ -39,6 +39,7 @@ def train(task: str, method: str, fold: int):
     mlflow.log_param("seed", SEED)
     mlflow.log_param("readout", READOUT)
     mlflow.log_param("folds", FOLDS)
+    mlflow.log_param("head_size", head_size)
 
     match method:
         case "FMCIB":
@@ -158,7 +159,7 @@ def train(task: str, method: str, fold: int):
         val_loader = DataLoader(val_data, batch_size=BATCH_SIZE, shuffle=False, drop_last=False)
         test_loader = DataLoader(test_data, batch_size=BATCH_SIZE, shuffle=False, drop_last=False)
 
-        num_hidden_units = calculate_hidden_units(output_dim_enc=input_dim)
+        num_hidden_units = calculate_hidden_units(output_dim_enc=input_dim, target_params=head_size)
 
         model = MLP(input_dim=input_dim, hidden_dim=num_hidden_units, num_layers=1, num_classes=2, readout=READOUT)
         model = model.to("cuda" if torch.cuda.is_available() else "cpu")
@@ -394,17 +395,19 @@ def train(task: str, method: str, fold: int):
 
 
 if __name__ == "__main__":
-    
-    for task in ["kidney_ct_grading_binary", "liver_ct_riskscore_binary",
-                 "headneck_ct_hpv_binary", "breast_mri_grading_binary", 
-                 "glioma_t1c_grading_binary", "glioma_flair_grading_binary", 
-                 "sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
-        for method in ["PyRadiomics", "FMCIB", "ModelsGenesis", "SwinUNETR", "VISTA3D", "VoCo"]:
-            for fold in range(FOLDS):
 
-                mlflow.set_experiment(task+"_"+method)
-                mlflow.start_run()    
-                train(task=task, method=method, fold=fold)
-                mlflow.end_run()
+
+    for head_size in [50000]:
+        for task in ["kidney_ct_grading_binary", "liver_ct_riskscore_binary",
+                    "headneck_ct_hpv_binary", "breast_mri_grading_binary", 
+                    "glioma_t1c_grading_binary", "glioma_flair_grading_binary", 
+                    "sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
+            for method in ["PyRadiomics", "FMCIB", "ModelsGenesis", "SwinUNETR", "VISTA3D", "VoCo"]:
+                for fold in range(FOLDS):
+
+                    mlflow.set_experiment(task+"_"+method)
+                    mlflow.start_run()    
+                    train(task=task, method=method, fold=fold, head_size=head_size)
+                    mlflow.end_run()
 
                 
