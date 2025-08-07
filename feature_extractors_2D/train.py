@@ -26,10 +26,14 @@ SEED = 42
 FOLDS = 5
 READOUT = "mean"
 
-def train(task: str, method: str, fold: int, views: int, architecture: str, head_size: int):
+def train(task: str, method: str, fold: int, views: int, architecture: str, head_size: int, topology: str):
 
     if (views in [1, 3]) and ("spherical" in architecture):
         print(f"Skipping task {task} with method {method} and architecture {architecture} for {views} views, as spherical GNN is not supported for these views.")
+        return 0
+    
+    if (topology in ["weighted", "complete"]) and "GNN" not in architecture:
+        print(f"Skipping task {task} with method {method} and architecture {architecture} for {views} views, as topology {topology} is only supported for GNN architectures.")
         return 0
     
     perspective = architecture.split("_")[0]
@@ -52,6 +56,7 @@ def train(task: str, method: str, fold: int, views: int, architecture: str, head
     mlflow.log_param("perspective", perspective)
     mlflow.log_param("nn_architecture", nn_architecture)
     mlflow.log_param("head_size", head_size)
+    mlflow.log_param("topology", topology)
 
     match method:
         case "DINOv2":
@@ -93,6 +98,10 @@ def train(task: str, method: str, fold: int, views: int, architecture: str, head
         case "liver_ct_riskscore_binary":
             data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/converted_nii/*{method}_{str(views).zfill(2)}views_{perspective}*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/liver_ct_riskscore_binary_folds.pt")
+        
+        case "liver_ct_grading_binary":
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/HCC_CHCC_C2/*{method}_{str(views).zfill(2)}views_{perspective}*.pt")]
+            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/liver_ct_grading_binary_folds.pt")
         
         case _:
             raise ValueError(f"Given task '{task}' unkown!")
@@ -152,8 +161,8 @@ def train(task: str, method: str, fold: int, views: int, architecture: str, head
                 train_val_data = SphericalDatasetMLP(train_data, train_labels_list)
                 test_data = SphericalDatasetMLP(test_data, test_labels_list)
             case "spherical_GNN":
-                train_val_data = SphericalDatasetGNN(train_data, train_labels_list)
-                test_data = SphericalDatasetGNN(test_data, test_labels_list)
+                train_val_data = SphericalDatasetGNN(train_data, train_labels_list, topology=topology)
+                test_data = SphericalDatasetGNN(test_data, test_labels_list, topology=topology)
             case _:
                 raise ValueError(f"Given architecture '{architecture}' unknown!")
 
@@ -182,7 +191,9 @@ def train(task: str, method: str, fold: int, views: int, architecture: str, head
         if  nn_architecture == "MLP":
             model = MLP(input_dim=input_dim, hidden_dim=num_hidden_units, num_layers=1, num_classes=2, readout=READOUT)
         elif nn_architecture == "GNN":
-            model = GNN(input_dim=384, hidden_dim=43, num_layers=1, num_classes=2, readout=READOUT)
+            model = GNN(input_dim=384, hidden_dim=86, num_layers=1, num_classes=2, readout=READOUT) # SAGECONV
+            # model = GNN(input_dim=384, hidden_dim=129, num_layers=1, num_classes=2, readout=READOUT) # GraphConv
+            # model = GNN(input_dim=384, hidden_dim=256, num_layers=1, num_classes=2, readout=READOUT) # GCNConv
         else:
             raise ValueError(f"Given architecture '{nn_architecture}' unknown!")
         model = model.to("cuda" if torch.cuda.is_available() else "cpu")
@@ -431,19 +442,24 @@ def train(task: str, method: str, fold: int, views: int, architecture: str, head
 if __name__ == "__main__":
 
 
-    for head_size in [50000]:
-        for task in ["kidney_ct_grading_binary", "liver_ct_riskscore_binary",
+    for head_size in [100000]:
+        for task in ["liver_ct_grading_binary", "kidney_ct_grading_binary", 
                     "headneck_ct_hpv_binary", "breast_mri_grading_binary", 
                     "glioma_t1c_grading_binary", "glioma_flair_grading_binary", 
                     "sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
             for method in ["DINOv2"]:
-                for architecture in ["spherical_GNN", "planar_MLP", "spherical_MLP"]:
-                    for views in [1, 3, 8, 12, 16, 20, 24]:
-                        for fold in range(FOLDS):
+                # for architecture in ["planar_MLP", "spherical_GNN", "spherical_MLP"]:
+                for architecture in ["planar_MLP", "spherical_MLP"]:
+                    for views in [1, 3, 8, 16, 24]:
+                        # for topology in ["local", "complete"]:
+                        for topology in ["local"]:
+                    
+                            for fold in range(FOLDS):
 
-                            mlflow.set_experiment(task+"_"+method+"_"+architecture)
-                            mlflow.start_run()    
-                            train(task=task, method=method, fold=fold, views=views, architecture=architecture, head_size=head_size)
-                            mlflow.end_run()
+                                # mlflow.set_experiment(task+"_"+method+"_"+architecture)                            
+                                mlflow.set_experiment("MLP_experiment")                            
+                                mlflow.start_run()    
+                                train(task=task, method=method, fold=fold, views=views, architecture=architecture, head_size=head_size, topology=topology)
+                                mlflow.end_run()
 
                 

@@ -418,6 +418,45 @@ def create_cv_splits(task: str, seed: int = 28) -> None:
 
                 torch.save(dict_folds, save_path)
                 print("CV Splits saved successfully!")
+        
+        case "liver_ct_grading_binary":
+            save_path = f"./data/liver/CECT/{task}_folds.pt"
+            if not os.path.exists(save_path):
+                dirs = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/HCC_CHCC_C2/*mask*.nii.gz"))
+                subjects = [os.path.basename(d).replace("_mask_C2.nii.gz", "") for d in dirs]
+
+                labels = []
+                df = pd.read_csv("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/patient_data.csv")
+                df = df.dropna(subset=["mask_path"])
+                df = df[df["phase"] == "C2"]
+
+                final_subjects = []
+                for subject in subjects:
+                    try:
+                        subtype = df[df["patient_id"] == subject]["cancer_type"].item()
+                        labels.append(0 if subtype == "HCC" else 1 if subtype == "CHCC" else np.nan)
+                        final_subjects.append(subject)
+                    except ValueError:
+                        continue
+                subjects = final_subjects
+
+                skfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+
+                dict_folds = {}
+                for fold, (train_idx, test_idx) in enumerate(skfold.split(subjects, labels)):
+                    train_subjects = [subjects[i] for i in train_idx]
+                    train_labels = [labels[i] for i in train_idx]
+                    test_subjects = [subjects[i] for i in test_idx]
+                    test_labels = [labels[i] for i in test_idx]
+
+                    dict_folds[fold] = {"train_subjects": train_subjects,
+                                        "train_labels": train_labels,
+                                        "test_subjects": test_subjects,
+                                        "test_labels": test_labels
+                                        }
+
+                torch.save(dict_folds, save_path)
+                print("CV Splits saved successfully!")
             
             else:
                 print("CV Splits already exist.")

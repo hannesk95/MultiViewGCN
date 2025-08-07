@@ -92,6 +92,10 @@ def train(task: str, method: str, fold: int, head_size: int):
             data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/converted_nii/*{method}*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/liver_ct_riskscore_binary_folds.pt")
         
+        case "liver_ct_grading_binary":
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/HCC_CHCC_C2/*{method}*.pt")]
+            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/liver_ct_grading_binary_folds.pt")
+
         case _:
             raise ValueError(f"Given task '{task}' unkown!")
         
@@ -397,8 +401,8 @@ def train(task: str, method: str, fold: int, head_size: int):
 if __name__ == "__main__":
 
 
-    for head_size in [50000]:
-        for task in ["kidney_ct_grading_binary", "liver_ct_riskscore_binary",
+    for head_size in [100000]:
+        for task in ["liver_ct_grading_binary", "kidney_ct_grading_binary", 
                     "headneck_ct_hpv_binary", "breast_mri_grading_binary", 
                     "glioma_t1c_grading_binary", "glioma_flair_grading_binary", 
                     "sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:

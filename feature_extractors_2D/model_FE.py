@@ -1,10 +1,32 @@
 import torch
 from torch.nn import Linear, BatchNorm1d
 import torch.nn.functional as F
-from torch_geometric.nn import SAGEConv, BatchNorm
+from torch_geometric.nn import SAGEConv, BatchNorm, GCNConv
 from typing import Literal
 from torch_geometric.nn import global_mean_pool, global_add_pool, global_max_pool
 import inspect
+
+from torch_geometric.nn import SAGEConv
+from torch_geometric.nn.conv import MessagePassing
+import torch
+from torch import nn
+
+class WeightedSAGEConv(MessagePassing):
+    def __init__(self, in_channels, out_channels, **kwargs):
+        super().__init__(**kwargs)
+        self.lin = nn.Linear(in_channels, out_channels)
+        self.lin_update = nn.Linear(in_channels + out_channels, out_channels)
+
+    def forward(self, x, edge_index, edge_weight=None):
+        if edge_weight is None:
+            edge_weight = torch.ones(edge_index.size(1), device=edge_index.device)
+        return self.propagate(edge_index, x=x, edge_weight=edge_weight)
+
+    def message(self, x_j, edge_weight):
+        return edge_weight.view(-1, 1) * x_j  # apply weights to neighbor messages
+
+    def update(self, aggr_out, x):
+        return self.lin_update(torch.cat([x, aggr_out], dim=1))
 
 class MLP(torch.nn.Module):
     def __init__(self, 
@@ -61,6 +83,7 @@ class GNN(torch.nn.Module):
     def __init__(self, 
                  architecture: Literal["SAGE"] = "SAGE",
                  aggregate: Literal["mean", "sum", "max"] = ["mean", "max"],                 
+                #   aggregate: Literal["mean", "sum", "max"] = "sum",                 
                  input_dim: int = 384, 
                  hidden_dim: int = 16, 
                  num_classes: int = 2,
@@ -79,6 +102,13 @@ class GNN(torch.nn.Module):
         match architecture:                
             case "SAGE":
                 self.conv = SAGEConv
+            case "WeightedSAGE":
+                self.conv = WeightedSAGEConv
+            case "GCN":
+                self.conv = GCNConv
+            case "GraphConv":
+                from torch_geometric.nn import GraphConv
+                self.conv = GraphConv
             case _:                
                 raise ValueError("Given GNN architecture is not available!")                  
 
@@ -95,6 +125,8 @@ class GNN(torch.nn.Module):
         self.edge_attr_is_available = True if "edge_attr" in inspect.signature(self.conv.forward).parameters.keys() else False
         self.convs = torch.nn.ModuleList()
         self.batch_norms = torch.nn.ModuleList()
+
+        # input_dim = input_dim * 2
 
         for i in range(num_layers):
             if i == 0:
@@ -121,7 +153,7 @@ class GNN(torch.nn.Module):
         x = data.x.to(torch.float32)
         edge_index = data.edge_index.to(torch.long)
         edge_attr = data.edge_attr.to(torch.float32)
-        batch = data.batch                 
+        batch = data.batch                         
 
         features = []
         for conv, batch_norm in zip(self.convs, self.batch_norms):
