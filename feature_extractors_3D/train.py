@@ -29,16 +29,18 @@ def train(task: str, method: str, fold: int, head_size: int):
 
     identifier = str(uuid.uuid4())
     seed_everything(SEED)
-    mlflow.log_param("task", task)
-    mlflow.log_param("method", method)
+    
     mlflow.log_param("epochs", EPOCHS)
     mlflow.log_param("batch_size", BATCH_SIZE)
     mlflow.log_param("warmup_epochs", WARMUP_EPOCHS)
     mlflow.log_param("initial_lr", INITIAL_LR)
     mlflow.log_param("target_lr", TARGET_LR)
     mlflow.log_param("seed", SEED)
-    mlflow.log_param("readout", READOUT)
     mlflow.log_param("folds", FOLDS)
+    mlflow.log_param("readout", READOUT)    
+
+    mlflow.log_param("task", task)
+    mlflow.log_param("method", method)
     mlflow.log_param("head_size", head_size)
 
     match method:
@@ -400,18 +402,15 @@ def train(task: str, method: str, fold: int, head_size: int):
 
 if __name__ == "__main__":
 
-
     for head_size in [100000]:
         for task in ["liver_ct_grading_binary", "kidney_ct_grading_binary", 
                     "headneck_ct_hpv_binary", "breast_mri_grading_binary", 
-                    "glioma_t1c_grading_binary", "glioma_flair_grading_binary", 
-                    "sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
-            for method in ["PyRadiomics", "FMCIB", "ModelsGenesis", "SwinUNETR", "VISTA3D", "VoCo"]:
+                    "glioma_t1c_grading_binary", "sarcoma_t2_grading_binary"]:            
+            for method in ["FMCIB", "ModelsGenesis", "SwinUNETR", "VISTA3D", "VoCo"]:
                 for fold in range(FOLDS):
 
-                    mlflow.set_experiment(task+"_"+method)
+                    # mlflow.set_experiment(task+"_"+method)
+                    mlflow.set_experiment()
                     mlflow.start_run()    
                     train(task=task, method=method, fold=fold, head_size=head_size)
                     mlflow.end_run()
-
-                
