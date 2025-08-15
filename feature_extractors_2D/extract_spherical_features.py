@@ -350,6 +350,9 @@ def extract_spherical_features(dataset, model_name, views):
         case "glioma_t1c_grading_binary":
             volumes = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*T1c_bias.nii.gz"))
             masks = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*tumor_segmentation_merged.nii.gz"))
+        case "glioma_t1c_grading_binary_custom_zspacing":
+            volumes = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_T1c_custom_z_spacing/*T1c_bias_zspacing6.nii.gz"))
+            masks = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_T1c_custom_z_spacing/*tumor_segmentation_merged_zspacing6.nii.gz"))
         case "glioma_flair_grading_binary":
             volumes = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*FLAIR_bias.nii.gz"))
             masks = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*tumor_segmentation_merged.nii.gz"))
@@ -378,6 +381,10 @@ def extract_spherical_features(dataset, model_name, views):
             masks = sorted([file for file in files if "segmentation" in file])  
         case "liver_ct_grading_binary":
             files = [file for file in glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/HCC_CHCC_C2/*.nii.gz")]
+            volumes = sorted([file for file in files if not "mask" in file])
+            masks = sorted([file for file in files if "mask" in file])  
+        case "liver_ct_grading_binary_custom_zspacing":
+            files = [file for file in glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/HCC_CHCC_C2_custom_z_spacing/*zspacing6.nii.gz")]
             volumes = sorted([file for file in files if not "mask" in file])
             masks = sorted([file for file in files if "mask" in file])  
         case _:
@@ -467,13 +474,13 @@ def extract_spherical_features(dataset, model_name, views):
 
 if __name__ == "__main__":
     
-    for dataset in ["liver_ct_grading_binary"]:
+    for dataset in ["glioma_t1c_grading_binary_custom_zspacing", "liver_ct_grading_binary_custom_zspacing"]:
     # for dataset in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary", 
     #                 "glioma_t1c_grading_binary", "glioma_flair_grading_binary", 
     #                 "breast_mri_grading_binary", "headneck_ct_hpv_binary", 
     #                 "kidney_ct_grading_binary", "liver_ct_riskscore_binary"]:
         for model in ["DINOv2"]:
-            for views in [8, 12, 16, 20, 24]:
+            for views in [8, 16, 24]:
                 extract_spherical_features(dataset, model, views)
 
 

@@ -16,6 +16,7 @@ import os
 from sklearn.metrics import balanced_accuracy_score, matthews_corrcoef, roc_auc_score, f1_score
 import uuid
 import re
+import torch.nn.functional as F
 
 EPOCHS = 300
 BATCH_SIZE = 16
@@ -26,15 +27,7 @@ SEED = 42
 FOLDS = 5
 READOUT = "mean"
 
-def train(task: str, method: str, fold: int, views: int, architecture: str, head_size: int, topology: str):
-
-    if (views in [1, 3]) and ("spherical" in architecture):
-        print(f"Skipping task {task} with method {method} and architecture {architecture} for {views} views, as spherical GNN is not supported for these views.")
-        return 0
-    
-    if (topology in ["weighted", "complete"]) and "GNN" not in architecture:
-        print(f"Skipping task {task} with method {method} and architecture {architecture} for {views} views, as topology {topology} is only supported for GNN architectures.")
-        return 0
+def train(task: str, method: str, fold: int, views: int, architecture: str, head_size: int, topology: str):    
     
     perspective = architecture.split("_")[0]
     nn_architecture = architecture.split("_")[1]
@@ -78,6 +71,10 @@ def train(task: str, method: str, fold: int, views: int, architecture: str, head
         case "glioma_t1c_grading_binary":
             data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*T1c*{method}_{str(views).zfill(2)}views_{perspective}*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_t1c_grading_binary_folds.pt")
+
+        case "glioma_t1c_grading_binary_custom_zspacing":
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_T1c_custom_z_spacing/*T1c*{method}_{str(views).zfill(2)}views_{perspective}*.pt")]
+            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_t1c_grading_binary_folds.pt")
         
         case "glioma_flair_grading_binary":
             data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*FLAIR*{method}_{str(views).zfill(2)}views_{perspective}*.pt")] 
@@ -103,6 +100,10 @@ def train(task: str, method: str, fold: int, views: int, architecture: str, head
             data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/HCC_CHCC_C2/*{method}_{str(views).zfill(2)}views_{perspective}*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/liver_ct_grading_binary_folds.pt")
         
+        case "liver_ct_grading_binary_custom_zspacing":
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/HCC_CHCC_C2_custom_z_spacing/*{method}_{str(views).zfill(2)}views_{perspective}*.pt")]
+            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/liver_ct_grading_binary_folds.pt")
+
         case _:
             raise ValueError(f"Given task '{task}' unkown!")
         
@@ -260,7 +261,7 @@ def train(task: str, method: str, fold: int, views: int, architecture: str, head
                 train_pred = torch.argmax(output, dim=1)
                 train_true_list.append(y.cpu().numpy())
                 train_pred_list.append(train_pred.cpu().numpy())
-                train_score_list.append(output[:,1].detach().cpu().numpy())                  
+                train_score_list.append(F.softmax(output, dim=1)[:,1].detach().cpu().numpy())                  
 
             train_loss = sum(train_loss_list) / len(train_loader)
             train_true = np.concatenate(train_true_list)
@@ -297,7 +298,7 @@ def train(task: str, method: str, fold: int, views: int, architecture: str, head
                     val_pred = torch.argmax(val_output, dim=1)
                     val_true_list.append(y_val.cpu().numpy())
                     val_pred_list.append(val_pred.cpu().numpy())
-                    val_score_list.append(val_output[:,1].detach().cpu().numpy())
+                    val_score_list.append(F.softmax(val_output, dim=1)[:,1].detach().cpu().numpy())
             val_loss = sum(val_loss_list) / len(val_loader)
             val_true = np.concatenate(val_true_list)
             val_pred = np.concatenate(val_pred_list)
@@ -413,7 +414,7 @@ def train(task: str, method: str, fold: int, views: int, architecture: str, head
                 test_pred = torch.argmax(test_output, dim=1)
                 test_true_list.append(y_test.cpu().numpy())
                 test_pred_list.append(test_pred.cpu().numpy())
-                test_score_list.append(test_output[:,1].detach().cpu().numpy())
+                test_score_list.append(F.softmax(test_output, dim=1)[:,1].detach().cpu().numpy())
 
         test_loss = sum(test_loss_list) / len(test_loader)
         test_true = np.concatenate(test_true_list)
@@ -431,6 +432,17 @@ def train(task: str, method: str, fold: int, views: int, architecture: str, head
         mlflow.log_metric("test_mcc", test_mcc)
         mlflow.log_metric("test_auc", test_auc)
         mlflow.log_metric("test_bacc", test_bacc)   
+        
+        mlflow.log_param("test_true_list", test_true)
+        mlflow.log_param("test_pred_list", test_pred)
+        mlflow.log_param("test_score_list", test_score)
+
+        artifact_uri = mlflow.get_artifact_uri()
+        mlflow.log_param("auc_model_path", f"{artifact_uri}/model_auc_{identifier}.pth")
+        mlflow.log_param("bacc_model_path", f"{artifact_uri}/model_bacc_{identifier}.pth")
+        mlflow.log_param("f1_model_path", f"{artifact_uri}/model_f1_{identifier}.pth")
+        mlflow.log_param("loss_model_path", f"{artifact_uri}/model_loss_{identifier}.pth")
+        mlflow.log_param("mcc_model_path", f"{artifact_uri}/model_mcc_{identifier}.pth")
 
         os.remove(f"model_auc_{identifier}.pth")
         os.remove(f"model_bacc_{identifier}.pth")
@@ -443,21 +455,26 @@ if __name__ == "__main__":
 
 
     for head_size in [100000]:
-        for task in ["liver_ct_grading_binary", "kidney_ct_grading_binary", 
-                    "headneck_ct_hpv_binary", "breast_mri_grading_binary", 
-                    "glioma_t1c_grading_binary", "glioma_flair_grading_binary", 
-                    "sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary"]:
+        for task in ["liver_ct_grading_binary_custom_zspacing"]:
             for method in ["DINOv2"]:
-                # for architecture in ["planar_MLP", "spherical_GNN", "spherical_MLP"]:
-                for architecture in ["planar_MLP", "spherical_MLP"]:
-                    for views in [1, 3, 8, 16, 24]:
-                        # for topology in ["local", "complete"]:
-                        for topology in ["local"]:
-                    
+                # for architecture in ["planar_MLP", "spherical_MLP", "spherical_GNN"]:
+                for architecture in ["spherical_GNN"]:
+                    # for views in [1, 3, 8, 16, 24]:
+                    for views in [8, 16, 24]:
+                        # for topology in ["local", "complete"]:                    
+                        for topology in ["local"]:                    
                             for fold in range(FOLDS):
 
-                                # mlflow.set_experiment(task+"_"+method+"_"+architecture)                            
-                                mlflow.set_experiment("MLP_experiment")                            
+                                if (views in [1, 3]) and ("spherical" in architecture):
+                                    print(f"Skipping task {task} with method {method} and architecture {architecture} for {views} views, as spherical GNN is not supported for these views.")
+                                    continue
+                                
+                                if (topology in ["weighted", "complete"]) and "MLP" in architecture:
+                                    print(f"Skipping task {task} with method {method} and architecture {architecture} for {views} views, as topology {topology} is only supported for GNN architectures.")
+                                    continue
+                         
+                                # mlflow.set_experiment("all_DINOv2_experiments_softmax")                            
+                                mlflow.set_experiment("custom_z_spacing")                            
                                 mlflow.start_run()    
                                 train(task=task, method=method, fold=fold, views=views, architecture=architecture, head_size=head_size, topology=topology)
                                 mlflow.end_run()
