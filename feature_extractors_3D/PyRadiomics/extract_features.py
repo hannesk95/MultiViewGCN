@@ -75,7 +75,8 @@ def extract_features(dataset: str):
         print(f"\nImage: {volume}")
         print(f"Mask:  {mask}\n")
 
-        
+
+              
 
         subject = tio.Subject(
             image=tio.ScalarImage(volume),
