@@ -102,27 +102,30 @@ class DinoV2ClassifierSlice(torch.nn.Module):
 
     def forward(self, source, save_attn=False, src_key_padding_mask=None, **kwargs):   
 
-        if save_attn:
-            fastpath_enabled = torch.backends.mha.get_fastpath_enabled()
-            torch.backends.mha.set_fastpath_enabled(False)
-            self.attention_maps_slice = []
-            self.attention_maps = []
-            self.hooks = []
-            self.register_hooks()
+        # if save_attn:
+        #     fastpath_enabled = torch.backends.mha.get_fastpath_enabled()
+        #     torch.backends.mha.set_fastpath_enabled(False)
+        #     self.attention_maps_slice = []
+        #     self.attention_maps = []
+        #     self.hooks = []
+        #     self.register_hooks()
 
 
-        # x = source.to(self.device) # [B, C, D, H, W]
-        x = source # [B, C, D, H, W]
-        B, C, *_ = x.shape
+        # # x = source.to(self.device) # [B, C, D, H, W]
+        # x = source # [B, C, D, H, W]
+        # B, C, *_ = x.shape
  
 
-        x = rearrange(x, 'b c d h w -> (b d c) h w')
-        x = x[:, None]
-        x = x.repeat(1, 3, 1, 1) # Gray to RGB
+        # x = rearrange(x, 'b c d h w -> (b d c) h w')
+        # x = x[:, None]
+        # x = x.repeat(1, 3, 1, 1) # Gray to RGB
 
-        # x = slices2rgb(x) # [B, 1, D, H, W] -> [B*D//3, 3, H, W]
+        # # x = slices2rgb(x) # [B, 1, D, H, W] -> [B*D//3, 3, H, W]
 
-        x = self.encoder(x) # [(B D), C, H, W] -> [(B D), out] 
+        # x = self.encoder(x) # [(B D), C, H, W] -> [(B D), out] 
+
+        B = 16
+        x = torch.randn((128, 384)).cuda()
 
         # Bottleneck: force to focus on relevant features for classification 
         if hasattr(self, 'bottleneck'):
