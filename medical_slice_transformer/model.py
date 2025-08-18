@@ -124,15 +124,16 @@ class DinoV2ClassifierSlice(torch.nn.Module):
 
         # x = self.encoder(x) # [(B D), C, H, W] -> [(B D), out] 
 
-        B = 16
-        x = torch.randn((128, 384)).cuda()
+        B = source.shape[0]
+        # x = torch.randn((128, 384)).cuda()
+        x = source
 
         # Bottleneck: force to focus on relevant features for classification 
         if hasattr(self, 'bottleneck'):
             x = self.bottleneck(x)
         
         # Slice fusion 
-        x = rearrange(x, '(b d) e -> b d e', b=B)
+        # x = rearrange(x, '(b d) e -> b d e', b=B)
 
         if hasattr(self, 'slice_pos_emb'):
             pos = torch.arange(0, x.shape[1], dtype=torch.long, device=x.device)
