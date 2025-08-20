@@ -410,7 +410,7 @@ if __name__ == "__main__":
                 for fold in range(FOLDS):
 
                     # mlflow.set_experiment(task+"_"+method)
-                    mlflow.set_experiment()
+                    # mlflow.set_experiment()
                     mlflow.start_run()    
                     train(task=task, method=method, fold=fold, head_size=head_size)
                     mlflow.end_run()
