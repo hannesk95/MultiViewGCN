@@ -2,7 +2,7 @@ import sys
 sys.path.append("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/")
 import mlflow
 from utils import seed_everything, create_cv_splits, calculate_hidden_units
-from model_finetuning import FMCIB_Classifier
+from model_finetuning import FMCIB_Classifier, SwinUNETR_Classifier
 import torch
 from glob import glob
 from dataset_finetuning import FinetuningDataset
@@ -16,9 +16,11 @@ from sklearn.metrics import balanced_accuracy_score, matthews_corrcoef, roc_auc_
 import uuid
 import re
 from utils_finetuning import CosineAnnealingLR_Warmstart
+import torch.nn as nn
 
 EPOCHS = 200
-BATCH_SIZE = 16
+ACCUMULATION_STEPS = 64
+BATCH_SIZE = 4
 WARMUP_EPOCHS = 20
 # INITIAL_LR = 0.0
 # TARGET_LR = 0.001
@@ -28,7 +30,7 @@ SEED = 42
 FOLDS = 5
 READOUT = "mean"
 
-def train(task: str, method: str, fold: int):
+def train(task: str, method: str, fold: int, init_head: bool = True):
 
     identifier = str(uuid.uuid4())
     seed_everything(SEED)
@@ -44,6 +46,7 @@ def train(task: str, method: str, fold: int):
 
     mlflow.log_param("task", task)
     mlflow.log_param("method", method)
+    mlflow.log_param("init_head", init_head)
 
     match method:
         case "FMCIB":
@@ -69,11 +72,11 @@ def train(task: str, method: str, fold: int):
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/sarcoma_t1_grading_binary_folds.pt")
             
         case "sarcoma_t2_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/finetuning_3D/data/FMCIB/sarcoma_t2_grading_binary/*.nii.gz")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/finetuning_3D/data/{method}/sarcoma_t2_grading_binary/*.nii.gz")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/sarcoma_t2_grading_binary_folds.pt")       
         
         case "glioma_t1c_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/finetuning_3D/data/FMCIB/glioma_t1c_grading_binary/*.nii.gz")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/finetuning_3D/data/{method}/glioma_t1c_grading_binary/*.nii.gz")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_t1c_grading_binary_folds.pt")
         
         case "glioma_flair_grading_binary":
@@ -81,15 +84,15 @@ def train(task: str, method: str, fold: int):
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_flair_grading_binary_folds.pt")
         
         case "headneck_ct_hpv_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/finetuning_3D/data/FMCIB/headneck_ct_hpv_binary/*.nii.gz")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/finetuning_3D/data/{method}/headneck_ct_hpv_binary/*.nii.gz")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/headneck/headneck_ct_hpv_binary_folds.pt")
         
         case "breast_mri_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/finetuning_3D/data/FMCIB/breast_mri_grading_binary/*.nii.gz")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/finetuning_3D/data/{method}/breast_mri_grading_binary/*.nii.gz")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/breast/breast_mri_grading_binary_folds.pt")
         
         case "kidney_ct_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/finetuning_3D/data/FMCIB/kidney_ct_grading_binary/*.nii.gz")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/finetuning_3D/data/{method}/kidney_ct_grading_binary/*.nii.gz")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/kidney/kidney_ct_grading_binary_folds.pt")
         
         case "liver_ct_riskscore_binary":
@@ -97,11 +100,59 @@ def train(task: str, method: str, fold: int):
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/liver_ct_riskscore_binary_folds.pt")
         
         case "liver_ct_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/finetuning_3D/data/FMCIB/liver_ct_grading_binary/*.nii.gz")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/finetuning_3D/data/{method}/liver_ct_grading_binary/*.nii.gz")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/liver_ct_grading_binary_folds.pt")
 
         case _:
             raise ValueError(f"Given task '{task}' unkown!")
+
+
+    
+    checkpoint_dict = {
+        "breast_mri_grading_binary": [
+            "/home/johannes/Data/SSD_1.9TB/MultiViewGCN/feature_extractors_3D/mlruns/379266873390386575/166b501fd3534ee5b167ad0fd4a919eb/artifacts/model_auc_04b511c2-2b73-4c5f-a9b6-f1f01021b36c.pth", 
+            "/home/johannes/Data/SSD_1.9TB/MultiViewGCN/feature_extractors_3D/mlruns/379266873390386575/17bca2c8e45e4346b4ad3c17bbe6d9ab/artifacts/model_auc_0381ae62-574d-43eb-b863-ce58494e1874.pth",
+            "/home/johannes/Data/SSD_1.9TB/MultiViewGCN/feature_extractors_3D/mlruns/379266873390386575/2f9b320c874a44c19276fbeacb8728ee/artifacts/model_auc_2cad2d04-8483-4dd2-a3bb-c98fecb2c5d6.pth",
+            "/home/johannes/Data/SSD_1.9TB/MultiViewGCN/feature_extractors_3D/mlruns/379266873390386575/0757f02367e14aab9a1e3deb4ede50a1/artifacts/model_auc_b9c703fa-3127-4c20-9579-b1615fb2ac80.pth",
+            "/home/johannes/Data/SSD_1.9TB/MultiViewGCN/feature_extractors_3D/mlruns/379266873390386575/2441ffd8f6d74867ac9902d03d466d13/artifacts/model_auc_856e9224-46bd-4915-bdf6-60a94b9b0a7b.pth"
+            ],
+        "glioma_t1c_grading_binary": [
+            "path", 
+            "path",
+            "path",
+            "path",
+            "path"
+            ],
+        "sarcoma_t2_grading_binary": [
+            "path", 
+            "path",
+            "path",
+            "path",
+            "path"
+            ],
+        "headneck_ct_hpv_binary": [
+            "path", 
+            "path",
+            "path",
+            "path",
+            "path"
+            ],
+        "liver_ct_grading_binary": [
+            "path", 
+            "path",
+            "path",
+            "path",
+            "path"
+            ],
+        "kidney_ct_grading_binary": [
+            "path", 
+            "path",
+            "path",
+            "path",
+            "path"
+            ],
+        }
+
         
     for current_fold in range(FOLDS):
 
@@ -169,8 +220,27 @@ def train(task: str, method: str, fold: int):
 
         # num_hidden_units = calculate_hidden_units(output_dim_enc=input_dim, target_params=head_size)
 
-        model = FMCIB_Classifier()
+        match method:
+            case "FMCIB":
+                model = FMCIB_Classifier()
+            case "SwinUNETR":
+                model = SwinUNETR_Classifier()
+
         model = model.to("cuda" if torch.cuda.is_available() else "cpu")
+
+        if init_head:
+            checkpoint_path = checkpoint_dict[task][current_fold]
+            checkpoint = torch.load(checkpoint_path)
+            model.linear_layers[0].weight = nn.Parameter(checkpoint['linear_layers.0.weight'])
+            model.linear_layers[0].bias = nn.Parameter(checkpoint['linear_layers.0.bias'])
+            model.bn_layers[0].weight = nn.Parameter(checkpoint['bn_layers.0.weight'])
+            model.bn_layers[0].bias = nn.Parameter(checkpoint['bn_layers.0.bias'])
+            # model.bn_layers[0].running_mean = nn.Parameter(checkpoint['bn_layers.0.running_mean'])
+            # model.bn_layers[0].running_var = nn.Parameter(checkpoint['bn_layers.0.running_var'])
+            # model.bn_layers[0].num_batches_tracked = nn.Parameter(checkpoint['bn_layers.0.num_batches_tracked'], requires_grad=False)
+            model.linear.weight = nn.Parameter(checkpoint['linear.weight'])
+            model.linear.bias = nn.Parameter(checkpoint['linear.bias'])
+
         pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"Number of trainable parameters: {pytorch_total_params}")
         mlflow.log_param("num_trainable_params", pytorch_total_params)
@@ -180,7 +250,8 @@ def train(task: str, method: str, fold: int):
         class_weights = torch.tensor(class_weights).to(torch.float32)
         class_weights = class_weights.to("cuda" if torch.cuda.is_available() else "cpu")
         loss_fn = torch.nn.CrossEntropyLoss(weight=class_weights)
-        optimizer = torch.optim.SGD(model.parameters(), lr=LR, weight_decay=WD)
+        # optimizer = torch.optim.SGD(model.parameters(), lr=LR, weight_decay=WD)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WD)
 
         # Creates a GradScaler once at the beginning of training.
         scaler = GradScaler()
@@ -361,6 +432,7 @@ def train(task: str, method: str, fold: int):
         mlflow.log_param("best_val_bacc_epoch", best_val_bacc_epoch)        
 
         # Load the best model for evaluation  
+        # model.load_state_dict(torch.load(f"model_auc_{identifier}.pth"))
         model.load_state_dict(torch.load(f"model_auc_{identifier}.pth"))
 
         model.eval()
@@ -410,12 +482,15 @@ def train(task: str, method: str, fold: int):
 
 if __name__ == "__main__":
 
-    # for task in ["glioma_t1c_grading_binary", "sarcoma_t2_grading_binary", "breast_mri_grading_binary", "headneck_ct_hpv_binary", "kidney_ct_grading_binary", "liver_ct_grading_binary"]:            
-    for task in ["liver_ct_grading_binary"]:            
-        for method in ["FMCIB"]:
-            for fold in range(FOLDS):
+    # for task in ["headneck_ct_hpv_binary", "kidney_ct_grading_binary", "liver_ct_grading_binary"]:            
+    for task in ["glioma_t1c_grading_binary", "sarcoma_t2_grading_binary", "breast_mri_grading_binary", "headneck_ct_hpv_binary", "kidney_ct_grading_binary", "liver_ct_grading_binary"]:            
+    # for task in ["breast_mri_grading_binary"]:            
+    # for task in ["liver_ct_grading_binary"]:            
+        for method in ["SwinUNETR"]:
+            for init_head in [False]:
+                for fold in range(FOLDS):
 
-                mlflow.set_experiment(f"finetuning")
-                mlflow.start_run()    
-                train(task=task, method=method, fold=fold)
-                mlflow.end_run()
+                    mlflow.set_experiment(f"{method}_AdamW+batch_size{BATCH_SIZE}")
+                    mlflow.start_run()    
+                    train(task=task, method=method, fold=fold, init_head=init_head)
+                    mlflow.end_run()

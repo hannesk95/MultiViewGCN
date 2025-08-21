@@ -11,7 +11,7 @@ from base_model import BaseModel
 
 class ResEncoder(Module):
     def __init__(
-        self, weights_path: str,
+        self, weights_path: str, eval = True,
         **hypparams,
     ):
         super(ResEncoder, self).__init__()
@@ -55,8 +55,10 @@ class ResEncoder(Module):
 
             # elif hypparams["finetune_method"] == "linear_probing":
                 # fully freeze encoder
-        for n, param in self.res_unet.named_parameters():
-            param.requires_grad = False
+        
+        if eval:        
+            for n, param in self.res_unet.named_parameters():
+                param.requires_grad = False
 
     def forward(self, x):
 
