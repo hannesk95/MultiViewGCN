@@ -51,13 +51,6 @@ def extract_planar_features(dataset, model_name, views):
         case "glioma_t1c_grading_binary":
             volumes = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*T1c_bias.nii.gz"))
             masks = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*tumor_segmentation_merged.nii.gz"))
-        case "glioma_flair_grading_binary":
-            volumes = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*FLAIR_bias.nii.gz"))
-            masks = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*tumor_segmentation_merged.nii.gz"))
-        case "sarcoma_t1_grading_binary":
-            files = [file for file in glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/*/T1/*nii.gz")]
-            volumes = sorted([file for file in files if not "label" in file])
-            masks = sorted([file for file in files if "label" in file])
         case "sarcoma_t2_grading_binary":
             files = [file for file in glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/*/T2/*nii.gz")]
             volumes = sorted([file for file in files if not "label" in file])
@@ -73,10 +66,6 @@ def extract_planar_features(dataset, model_name, views):
             files = [file for file in glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/kidney/converted_nii/*.nii.gz")]
             volumes = sorted([file for file in files if "arterial" in file])
             masks = sorted([file for file in files if "segmentation_tumor" in file])  
-        case "liver_ct_riskscore_binary":
-            files = [file for file in glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/converted_nii/*.nii.gz")]
-            volumes = sorted([file for file in files if not "segmentation" in file])
-            masks = sorted([file for file in files if "segmentation" in file])  
         case "liver_ct_grading_binary":
             files = [file for file in glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/HCC_CHCC_C2/*.nii.gz")]
             volumes = sorted([file for file in files if not "mask" in file])
@@ -157,7 +146,6 @@ def extract_planar_features(dataset, model_name, views):
 
         torch.save(features, f"{volume.replace('.nii.gz', f'_{model_name}_{str(views).zfill(2)}views_planar_features.pt')}")
         print(f"Processed {volume} with features shape: {features.shape}")
-
 
 def extract_planar_feature_views(dataset, model, views, reference):
 

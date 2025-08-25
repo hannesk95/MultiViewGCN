@@ -19,9 +19,9 @@ from utils_finetuning import CosineAnnealingLR_Warmstart
 import torch.nn as nn
 
 EPOCHS = 200
-ACCUMULATION_STEPS = 64
-BATCH_SIZE = 4
-WARMUP_EPOCHS = 20
+ACCUMULATION_STEPS = 1
+BATCH_SIZE = 256
+WARMUP_EPOCHS = 50
 # INITIAL_LR = 0.0
 # TARGET_LR = 0.001
 LR = 1e-4
@@ -263,7 +263,7 @@ def train(task: str, method: str, fold: int, init_head: bool = True):
         #                                                     patience=5,           # Wait for n epochs without improvement
         #                                                     threshold=1e-4)       # Minimum change to qualify as an improvement    
         
-        scheduler = CosineAnnealingLR_Warmstart(optimizer=optimizer, T_max=EPOCHS, warmstart=20)
+        scheduler = CosineAnnealingLR_Warmstart(optimizer=optimizer, T_max=EPOCHS, warmstart=WARMUP_EPOCHS)
                                     
 
         # Variables to track the best model
@@ -284,27 +284,37 @@ def train(task: str, method: str, fold: int, init_head: bool = True):
             train_true_list = []
             train_pred_list = []
             train_score_list = []
-            for batch_data in train_loader:
+            for idx, batch_data in enumerate(train_loader):
                 
                 X = batch_data[0].to(torch.float32).to("cuda" if torch.cuda.is_available() else "cpu")
                 # X = torch.squeeze(X, dim=1)  # Remove the channel dimension if it exists
                 y = batch_data[1].to(torch.long).to("cuda" if torch.cuda.is_available() else "cpu")
                 
-                optimizer.zero_grad()            
+                            
 
-                with autocast(device_type='cuda', dtype=torch.float32):
+                with autocast(device_type='cuda', dtype=torch.float16):
                     output = model(X)
                     loss = loss_fn(output, y)
+                    loss = loss / ACCUMULATION_STEPS
 
-                scaler.scale(loss).backward()            
-                scaler.step(optimizer)            
-                scaler.update()
+                scaler.scale(loss).backward()   
+
+                if (idx + 1) % ACCUMULATION_STEPS == 0:
+
+                    scaler.step(optimizer)            
+                    scaler.update()
+                    optimizer.zero_grad()
 
                 train_loss_list.append(loss.item())
                 train_pred = torch.argmax(output, dim=1)
                 train_true_list.append(y.cpu().numpy())
                 train_pred_list.append(train_pred.cpu().numpy())
-                train_score_list.append(output[:,1].detach().cpu().numpy())                  
+                train_score_list.append(output[:,1].detach().cpu().numpy())     
+
+            # Handle the last, incomplete batch at the end of the epoch
+            # scaler.step(optimizer)            
+            # scaler.update()
+            # optimizer.zero_grad()             
 
             train_loss = sum(train_loss_list) / len(train_loader)
             train_true = np.concatenate(train_true_list)
@@ -482,15 +492,15 @@ def train(task: str, method: str, fold: int, init_head: bool = True):
 
 if __name__ == "__main__":
 
-    # for task in ["headneck_ct_hpv_binary", "kidney_ct_grading_binary", "liver_ct_grading_binary"]:            
-    for task in ["glioma_t1c_grading_binary", "sarcoma_t2_grading_binary", "breast_mri_grading_binary", "headneck_ct_hpv_binary", "kidney_ct_grading_binary", "liver_ct_grading_binary"]:            
+    # for task in ["sarcoma_t2_grading_binary", "headneck_ct_hpv_binary"]:            
+    for task in ["breast_mri_grading_binary", "kidney_ct_grading_binary", "liver_ct_grading_binary", "glioma_t1c_grading_binary", "sarcoma_t2_grading_binary", "headneck_ct_hpv_binary"]:            
     # for task in ["breast_mri_grading_binary"]:            
     # for task in ["liver_ct_grading_binary"]:            
-        for method in ["SwinUNETR"]:
+        for method in ["FMCIB"]:
             for init_head in [False]:
                 for fold in range(FOLDS):
 
-                    mlflow.set_experiment(f"{method}_AdamW+batch_size{BATCH_SIZE}")
+                    mlflow.set_experiment(f"{method}_AdamW_batch_size{BATCH_SIZE*ACCUMULATION_STEPS}_warmup{WARMUP_EPOCHS}")
                     mlflow.start_run()    
                     train(task=task, method=method, fold=fold, init_head=init_head)
                     mlflow.end_run()

@@ -16,9 +16,11 @@ class FinetuningDataset(Dataset):
 
     def __getitem__(self, idx):
         sample = self.data[idx]
+        # print(sample)
         volume = sitk.ReadImage(sample)
         volume = sitk.GetArrayFromImage(volume)
         volume = torch.tensor(volume, dtype=torch.float32).unsqueeze(0)
+        # print(volume.shape)
 
         # volume = tio.ScalarImage(sample)
         # volume = volume.tensor

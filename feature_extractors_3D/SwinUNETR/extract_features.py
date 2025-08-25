@@ -39,7 +39,7 @@ def save_metatensor_as_nifti(tensor: MetaTensor, filename: str):
 
 def extract_features(dataset: str):
 
-    model = ResEncoder(weights_path="/home/johannes/Data/SSD_1.9TB/MultiViewGCN/3D_feature_extractors/SwinUNETR/checkpoint_final.pth", input_channels=1, num_classes=2).cuda() if torch.cuda.is_available() else ResEncoder(weights_path="/home/johannes/Data/SSD_1.9TB/MultiViewGCN/3D_feature_extractors/SwinUNETR/checkpoint_final.pth", input_channels=1, num_classes=2)
+    model = ResEncoder(weights_path="/home/johannes/Data/SSD_1.9TB/MultiViewGCN/feature_extractors_3D/SwinUNETR/checkpoint_final.pth", input_channels=1, num_classes=2).cuda() if torch.cuda.is_available() else ResEncoder(weights_path="/home/johannes/Data/SSD_1.9TB/MultiViewGCN/3D_feature_extractors/SwinUNETR/checkpoint_final.pth", input_channels=1, num_classes=2)
 
     match dataset:
         case "glioma_t1c_grading_binary":
@@ -88,7 +88,7 @@ def extract_features(dataset: str):
         NormalizeIntensityd(keys=["image"], nonzero=True),
         CropForegroundd(keys=["image", "mask"], source_key="mask", select_fn=lambda x: x > 0),
         SpatialPadd(keys=["image", "mask"], spatial_size=(160, 160, 160), mode="constant", constant_values=0),
-        CenterSpatialCropd(keys=["image", "mask"], roi_size=(160, 64, 160)),    
+        CenterSpatialCropd(keys=["image", "mask"], roi_size=(160, 160, 160)),    
         # DivisiblePadd(keys=["image", "mask"], k=16),  
         ToTensord(keys=["image"]),
     ])
@@ -115,15 +115,16 @@ def extract_features(dataset: str):
         with torch.no_grad():
             output = model(image_tensor.unsqueeze(0))  # Add batch dimension if needed
         
-        torch.save(output, f"{volume.replace('.nii.gz', '_SwinUNETR_features.pt')}")
+        torch.save(output, f"{volume.replace('.nii.gz', '_SwinUNETR_features_160.pt')}")
         print(f"Processed {volume} with output shape: {output.shape}")
         
 
 if __name__ == "__main__":
 
-    for dataset in ["liver_ct_grading_binary"]:
-    # for dataset in ["sarcoma_t1_grading_binary", "sarcoma_t2_grading_binary", 
-    #                 "glioma_t1c_grading_binary", "glioma_flair_grading_binary", 
-    #                 "breast_mri_grading_binary", "headneck_ct_hpv_binary", 
-    #                 "kidney_ct_grading_binary", "liver_ct_riskscore_binary"]:
+    for dataset in ["sarcoma_t2_grading_binary", 
+                    "glioma_t1c_grading_binary",  
+                    "breast_mri_grading_binary", 
+                    "headneck_ct_hpv_binary", 
+                    "kidney_ct_grading_binary", 
+                    "liver_ct_grading_binary"]:
         extract_features(dataset=dataset)
