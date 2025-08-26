@@ -27,7 +27,7 @@ SEED = 42
 FOLDS = 5
 READOUT = "mean"
 
-def train(task: str, method: str, fold: int, views: int, architecture: str, head_size: int, topology: str):    
+def train(task: str, method: str, fold: int, views: int, architecture: str, head_size: int, topology: str = None):    
     
     perspective = architecture.split("_")[0]
     nn_architecture = architecture.split("_")[1]
@@ -144,9 +144,9 @@ def train(task: str, method: str, fold: int, views: int, architecture: str, head
             test_labels_list.append(test_labels[index[0]]) 
 
         match architecture:
-            case "planar_MLP":
-                train_val_data = PlanarDatasetMLP(train_data, train_labels_list)
-                test_data = PlanarDatasetMLP(test_data, test_labels_list)  
+            # case "planar_MLP":
+            #     train_val_data = PlanarDatasetMLP(train_data, train_labels_list)
+            #     test_data = PlanarDatasetMLP(test_data, test_labels_list)  
             case "spherical_MLP":
                 train_val_data = SphericalDatasetMLP(train_data, train_labels_list)
                 test_data = SphericalDatasetMLP(test_data, test_labels_list)
@@ -154,7 +154,8 @@ def train(task: str, method: str, fold: int, views: int, architecture: str, head
                 train_val_data = SphericalDatasetGNN(train_data, train_labels_list, topology=topology)
                 test_data = SphericalDatasetGNN(test_data, test_labels_list, topology=topology)
             case _:
-                raise ValueError(f"Given architecture '{architecture}' unknown!")
+                train_val_data = PlanarDatasetMLP(train_data, train_labels_list)
+                test_data = PlanarDatasetMLP(test_data, test_labels_list)  
 
         # Further split train_val into training and validation (80/20 split)
         train_size = int(0.8 * len(train_val_data))
@@ -444,28 +445,15 @@ if __name__ == "__main__":
 
 
     for head_size in [100000]:
-        for task in ["liver_ct_grading_binary_custom_zspacing"]:
+        for task in ["breast_mri_grading_binary", "glioma_t1c_grading_binary", "sarcoma_t2_grading_binary", "headneck_ct_hpv_binary", "kidney_ct_grading_binary", "liver_ct_grading_binary"]:
             for method in ["DINOv2"]:
-                # for architecture in ["planar_MLP", "spherical_MLP", "spherical_GNN"]:
-                for architecture in ["planar_MLP"]:
-                    # for views in [1, 3, 8, 16, 24]:
-                    for views in [1, 3, 8, 16, 24]:
-                        # for topology in ["local", "complete"]:                    
-                        for topology in ["local"]:                    
+                for architecture in ["acs_MLP"]:
+                    for views in [3, 8, 16, 24]:                                          
                             for fold in range(FOLDS):
-
-                                if (views in [1, 3]) and ("spherical" in architecture):
-                                    print(f"Skipping task {task} with method {method} and architecture {architecture} for {views} views, as spherical GNN is not supported for these views.")
-                                    continue
-                                
-                                if (topology in ["weighted", "complete"]) and "MLP" in architecture:
-                                    print(f"Skipping task {task} with method {method} and architecture {architecture} for {views} views, as topology {topology} is only supported for GNN architectures.")
-                                    continue
-                         
-                                # mlflow.set_experiment("all_DINOv2_experiments_softmax")                            
-                                mlflow.set_experiment("custom_z_spacing")                            
+                                                   
+                                mlflow.set_experiment("acs_slicing")                            
                                 mlflow.start_run()    
-                                train(task=task, method=method, fold=fold, views=views, architecture=architecture, head_size=head_size, topology=topology)
+                                train(task=task, method=method, fold=fold, views=views, architecture=architecture, head_size=head_size)
                                 mlflow.end_run()
 
                 

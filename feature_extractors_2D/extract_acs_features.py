@@ -60,9 +60,9 @@ def extract_acs_features(dataset, model_name, views):
 
     for volume, mask in tqdm(zip(volumes, masks), total=len(volumes), desc=f"Extracting acs {model_name} features from {dataset} with {views} views"):
 
-        if os.path.exists(f"{volume.replace('.nii.gz', f'_{model_name}_{str(views).zfill(2)}views_acs_features.pt')}"):
-            print(f"Skipping {volume}, features already extracted.")
-            continue
+        # if os.path.exists(f"{volume.replace('.nii.gz', f'_{model_name}_{str(views).zfill(2)}views_acs_features.pt')}"):
+        #     print(f"Skipping {volume}, features already extracted.")
+        #     continue
 
         img = tio.ScalarImage(volume)
         seg = tio.LabelMap(mask)
@@ -107,31 +107,61 @@ def extract_acs_features(dataset, model_name, views):
                     lower_index_axial = index_axial - ((views // 3) // 2)                
 
                     for i in range(lower_index_sagittal, upper_index_sagittal):
+                        if i < 0:
+                            i = 0
+                        if i >= img_tensor.shape[0]:
+                            i = img_tensor.shape[0] - 1
+                        
                         img_slices.append(img_tensor[i, :, :])
 
                     for i in range(lower_index_coronal, upper_index_coronal):
+                        if i < 0:
+                            i = 0
+                        if i >= img_tensor.shape[1]:
+                            i = img_tensor.shape[1] - 1
+
                         img_slices.append(img_tensor[:, i, :])
 
                     for i in range(lower_index_axial, upper_index_axial):
+                        if i < 0:
+                            i = 0
+                        if i >= img_tensor.shape[2]:
+                            i = img_tensor.shape[2] - 1
+
                         img_slices.append(img_tensor[:, :, i])
                 
-                if views % 3 == 1:
-                    upper_index_sagittal = index_sagittal + ((views // 3) // 2)
-                    lower_index_sagittal = index_sagittal - ((views // 3) // 2)
+                if views == 16:
+                    upper_index_sagittal = index_sagittal + 3
+                    lower_index_sagittal = index_sagittal - 2
 
-                    upper_index_coronal = index_coronal + ((views // 3) // 2)
-                    lower_index_coronal = index_coronal - ((views // 3) // 2)
+                    upper_index_coronal = index_coronal + 3
+                    lower_index_coronal = index_coronal - 2
 
-                    upper_index_axial = index_axial + ((views // 3) // 2) + 1
-                    lower_index_axial = index_axial - ((views // 3) // 2)                
+                    upper_index_axial = index_axial + 4
+                    lower_index_axial = index_axial - 2
 
                     for i in range(lower_index_sagittal, upper_index_sagittal):
+                        if i < 0:
+                            i = 0
+                        if i >= img_tensor.shape[0]:
+                            i = img_tensor.shape[0] - 1
+                        
                         img_slices.append(img_tensor[i, :, :])
 
                     for i in range(lower_index_coronal, upper_index_coronal):
+                        if i < 0:
+                            i = 0
+                        if i >= img_tensor.shape[1]:
+                            i = img_tensor.shape[1] - 1
+
                         img_slices.append(img_tensor[:, i, :])
 
                     for i in range(lower_index_axial, upper_index_axial):
+                        if i < 0:
+                            i = 0
+                        if i >= img_tensor.shape[2]:
+                            i = img_tensor.shape[2] - 1
+
                         img_slices.append(img_tensor[:, :, i])
                 
                 if views % 3 == 2:
@@ -145,12 +175,27 @@ def extract_acs_features(dataset, model_name, views):
                     lower_index_axial = index_axial - ((views // 3) // 2)                
 
                     for i in range(lower_index_sagittal, upper_index_sagittal):
+                        if i < 0:
+                            i = 0
+                        if i >= img_tensor.shape[0]:
+                            i = img_tensor.shape[0] - 1
+                        
                         img_slices.append(img_tensor[i, :, :])
 
                     for i in range(lower_index_coronal, upper_index_coronal):
+                        if i < 0:
+                            i = 0
+                        if i >= img_tensor.shape[1]:
+                            i = img_tensor.shape[1] - 1
+
                         img_slices.append(img_tensor[:, i, :])
 
                     for i in range(lower_index_axial, upper_index_axial):
+                        if i < 0:
+                            i = 0
+                        if i >= img_tensor.shape[2]:
+                            i = img_tensor.shape[2] - 1
+
                         img_slices.append(img_tensor[:, :, i])
 
         encodings = []
@@ -167,11 +212,12 @@ def extract_acs_features(dataset, model_name, views):
         torch.save(features, f"{volume.replace('.nii.gz', f'_{model_name}_{str(views).zfill(2)}views_acs_features.pt')}")
         # print(f"Processed {volume} with features shape: {features.shape}")
     
-    os.remove("acs_output_image.png")
+    # os.remove("acs_output_image.png")
 
 if __name__ == "__main__":
 
     for dataset in ["glioma_t1c_grading_binary", "sarcoma_t2_grading_binary", "breast_mri_grading_binary", "headneck_ct_hpv_binary", "kidney_ct_grading_binary", "liver_ct_grading_binary"]:
         for model in ["DINOv2"]:
-            for views in [3, 8, 16, 24]:
+            # for views in [3, 8, 16, 24]:
+            for views in [16]:
                 extract_acs_features(dataset, model, views)
