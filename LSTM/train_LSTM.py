@@ -2,10 +2,10 @@ import sys
 sys.path.append("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/")
 import mlflow
 from utils import seed_everything, create_cv_splits, calculate_hidden_units
-from model_FE import MLP, GNN
+# from model_FE import MLP, GNN
 import torch
 from glob import glob
-from dataset_FE import PlanarDatasetMLP, SphericalDatasetGNN, SphericalDatasetMLP
+# from dataset_FE import PlanarDatasetMLP, SphericalDatasetGNN, SphericalDatasetMLP
 from torch.utils.data import DataLoader
 from torch_geometric.loader import DataLoader as PyGDataLoader
 import numpy as np
@@ -17,6 +17,8 @@ from sklearn.metrics import balanced_accuracy_score, matthews_corrcoef, roc_auc_
 import uuid
 import re
 import torch.nn.functional as F
+from dataset_LSTM import LSTMDataset
+from model_LSTM import LSTMClassifier
 
 EPOCHS = 300
 BATCH_SIZE = 16
@@ -27,15 +29,13 @@ SEED = 42
 FOLDS = 5
 READOUT = "mean"
 
-def train(task: str, method: str, fold: int, views: int, architecture: str, head_size: int, topology: str):    
-    
-    perspective = architecture.split("_")[0]
-    nn_architecture = architecture.split("_")[1]
+
+def train(task: str, fold: int, views: int):  
+    # print("I am training")  
 
     identifier = str(uuid.uuid4())
     seed_everything(SEED)
     mlflow.log_param("task", task)
-    mlflow.log_param("method", method)
     mlflow.log_param("epochs", EPOCHS)
     mlflow.log_param("batch_size", BATCH_SIZE)
     mlflow.log_param("warmup_epochs", WARMUP_EPOCHS)
@@ -45,52 +45,41 @@ def train(task: str, method: str, fold: int, views: int, architecture: str, head
     mlflow.log_param("readout", READOUT)
     mlflow.log_param("folds", FOLDS)
     mlflow.log_param("views", views)
-    mlflow.log_param("architecture", architecture)
-    mlflow.log_param("perspective", perspective)
-    mlflow.log_param("nn_architecture", nn_architecture)
-    mlflow.log_param("head_size", head_size)
-    mlflow.log_param("topology", topology)
-
-    match method:
-        case "DINOv2":
-            input_dim = 384 * views
-        case _:
-            raise ValueError(f"Given method '{method}' unknown!")    
 
     # create_cv_splits(task=task)
 
-    match task:        
+    match task:           
             
         case "sarcoma_t2_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/*/T2/*{method}_{str(views).zfill(2)}views_{perspective}*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/*/T2/*_{str(views).zfill(2)}views_axial*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/sarcoma_t2_grading_binary_folds.pt")       
         
         case "glioma_t1c_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*T1c*{method}_{str(views).zfill(2)}views_{perspective}*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*T1c*_{str(views).zfill(2)}views_axial*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_t1c_grading_binary_folds.pt")
 
         case "glioma_t1c_grading_binary_custom_zspacing":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_T1c_custom_z_spacing/*T1c*{method}_{str(views).zfill(2)}views_{perspective}*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_T1c_custom_z_spacing/*T1c*_{str(views).zfill(2)}views_axial*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_t1c_grading_binary_folds.pt")
         
         case "headneck_ct_hpv_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/headneck/converted_nii_merged/*/*{method}_{str(views).zfill(2)}views_{perspective}*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/headneck/converted_nii_merged/*/*_{str(views).zfill(2)}views_axial*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/headneck/headneck_ct_hpv_binary_folds.pt")
         
         case "breast_mri_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/breast/duke_tumor_grading/*{method}_{str(views).zfill(2)}views_{perspective}*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/breast/duke_tumor_grading/*_{str(views).zfill(2)}views_axial*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/breast/breast_mri_grading_binary_folds.pt")
         
         case "kidney_ct_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/kidney/converted_nii/*{method}_{str(views).zfill(2)}views_{perspective}*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/kidney/converted_nii/*_{str(views).zfill(2)}views_axial*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/kidney/kidney_ct_grading_binary_folds.pt")
         
         case "liver_ct_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/HCC_CHCC_C2/*{method}_{str(views).zfill(2)}views_{perspective}*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/HCC_CHCC_C2/*_{str(views).zfill(2)}views_axial*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/liver_ct_grading_binary_folds.pt")
         
         case "liver_ct_grading_binary_custom_zspacing":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/HCC_CHCC_C2_custom_z_spacing/*{method}_{str(views).zfill(2)}views_{perspective}*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/HCC_CHCC_C2_custom_z_spacing/*_{str(views).zfill(2)}views_axial*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/liver_ct_grading_binary_folds.pt")
 
         case _:
@@ -143,15 +132,10 @@ def train(task: str, method: str, fold: int, views: int, architecture: str, head
             test_data.append(item[0])
             test_labels_list.append(test_labels[index[0]]) 
 
-        match architecture:
-            case "thomson_MLP":
-                train_val_data = SphericalDatasetMLP(train_data, train_labels_list)
-                test_data = SphericalDatasetMLP(test_data, test_labels_list)
-            case "thomson_GNN":
-                train_val_data = SphericalDatasetGNN(train_data, train_labels_list, topology=topology, views=views)
-                test_data = SphericalDatasetGNN(test_data, test_labels_list, topology=topology, views=views)
-            case _:
-                raise ValueError(f"Given architecture '{architecture}' unknown!")
+  
+        train_val_data = LSTMDataset(train_data, train_labels_list)
+        test_data = LSTMDataset(test_data, test_labels_list)  
+
 
         # Further split train_val into training and validation (80/20 split)
         train_size = int(0.8 * len(train_val_data))
@@ -163,26 +147,11 @@ def train(task: str, method: str, fold: int, views: int, architecture: str, head
         print(f"Number of test samples:  {str(len(test_data)).zfill(4)}")
 
         # Create DataLoader
-        if "GNN" in architecture:
-            train_loader = PyGDataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
-            val_loader = PyGDataLoader(val_data, batch_size=BATCH_SIZE, shuffle=False, drop_last=False)
-            test_loader = PyGDataLoader(test_data, batch_size=BATCH_SIZE, shuffle=False, drop_last=False)
-        else:
-            # For MLP, we can use the standard DataLoader
-            train_loader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
-            val_loader = DataLoader(val_data, batch_size=BATCH_SIZE, shuffle=False, drop_last=False)
-            test_loader = DataLoader(test_data, batch_size=BATCH_SIZE, shuffle=False, drop_last=False)
+        train_loader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
+        val_loader = DataLoader(val_data, batch_size=BATCH_SIZE, shuffle=False, drop_last=False)
+        test_loader = DataLoader(test_data, batch_size=BATCH_SIZE, shuffle=False, drop_last=False)
 
-        num_hidden_units = calculate_hidden_units(output_dim_enc=input_dim, target_params=head_size)
-
-        if  nn_architecture == "MLP":
-            model = MLP(input_dim=input_dim, hidden_dim=num_hidden_units, num_layers=1, num_classes=2, readout=READOUT)
-        elif nn_architecture == "GNN":
-            model = GNN(input_dim=384, hidden_dim=86, num_layers=1, num_classes=2, readout=READOUT) # SAGECONV
-            # model = GNN(input_dim=384, hidden_dim=129, num_layers=1, num_classes=2, readout=READOUT) # GraphConv
-            # model = GNN(input_dim=384, hidden_dim=256, num_layers=1, num_classes=2, readout=READOUT) # GCNConv
-        else:
-            raise ValueError(f"Given architecture '{nn_architecture}' unknown!")
+        model = LSTMClassifier(input_dim=384, hidden_dim=56, num_layers=1, output_dim=2)
         model = model.to("cuda" if torch.cuda.is_available() else "cpu")
         pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"Number of trainable parameters: {pytorch_total_params}")
@@ -225,11 +194,8 @@ def train(task: str, method: str, fold: int, views: int, architecture: str, head
             train_score_list = []
             for batch_data in train_loader:
 
-                if "GNN" in architecture:
-                    X = batch_data[0].to("cuda" if torch.cuda.is_available() else "cpu")
-                else:
-                    X = batch_data[0].to(torch.float32).to("cuda" if torch.cuda.is_available() else "cpu")
-                    X = torch.squeeze(X, dim=1)  # Remove the channel dimension if it exists
+                X = batch_data[0].to(torch.float32).to("cuda" if torch.cuda.is_available() else "cpu")
+                # X = X.view((-1, 384))  # Remove the channel dimension if it exists
                 
                 y = batch_data[1].to(torch.long).to("cuda" if torch.cuda.is_available() else "cpu")
                 
@@ -266,12 +232,9 @@ def train(task: str, method: str, fold: int, views: int, architecture: str, head
             val_score_list = []
             with torch.no_grad():           
                 for val_data in val_loader:
-
-                    if "GNN" in architecture:
-                        X_val = val_data[0].to("cuda" if torch.cuda.is_available() else "cpu")
-                    else:
-                        X_val = val_data[0].to(torch.float32).to("cuda" if torch.cuda.is_available() else "cpu")
-                        X_val = torch.squeeze(X_val, dim=1)  # Remove the channel dimension if it exists
+                    
+                    X_val = val_data[0].to(torch.float32).to("cuda" if torch.cuda.is_available() else "cpu")
+                    # X_val = torch.squeeze(X_val, dim=1)  # Remove the channel dimension if it exists
 
                     y_val = val_data[1].to(torch.long).to("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -385,11 +348,9 @@ def train(task: str, method: str, fold: int, views: int, architecture: str, head
         test_score_list = []
         with torch.no_grad():           
             for test_data in test_loader:
-                if "GNN" in architecture:
-                    X_test = test_data[0].to("cuda" if torch.cuda.is_available() else "cpu")
-                else:               
-                    X_test = test_data[0].to(torch.float32).to("cuda" if torch.cuda.is_available() else "cpu")
-                    X_test = torch.squeeze(X_test, dim=1)  # Remove the channel dimension if it exists
+                             
+                X_test = test_data[0].to(torch.float32).to("cuda" if torch.cuda.is_available() else "cpu")
+                # X_test = torch.squeeze(X_test, dim=1)  # Remove the channel dimension if it exists
                 
                 y_test = test_data[1].to(torch.long).to("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -438,25 +399,13 @@ def train(task: str, method: str, fold: int, views: int, architecture: str, head
 
 
 if __name__ == "__main__":
-
-
-    for head_size in [100000]:
-        for task in ["breast_mri_grading_binary", "kidney_ct_grading_binary", "liver_ct_grading_binary", "glioma_t1c_grading_binary", "sarcoma_t2_grading_binary", "headneck_ct_hpv_binary"]:     
-            for method in ["DINOv2"]:
-                # for architecture in ["thomson_GNN", "thomson_MLP"]:
-                for architecture in ["thomson_GNN"]:
-                    for views in [8, 16, 24]:
-                        # for topology in ["local", "complete", "weighted"]:                    
-                        for topology in ["complete_weighted_hops_linear", "complete_weighted_hops_inverse_square", "complete_uniform", "local"]:                    
-                            for fold in range(FOLDS):
-                                
-                                if (topology in ["weighted", "complete"]) and "MLP" in architecture:
-                                    print(f"Skipping task {task} with method {method} and architecture {architecture} for {views} views, as topology {topology} is only supported for GNN architectures.")
-                                    continue
-                                                   
-                                mlflow.set_experiment("paper_results")                            
-                                mlflow.start_run()    
-                                train(task=task, method=method, fold=fold, views=views, architecture=architecture, head_size=head_size, topology=topology)
-                                mlflow.end_run()
-
-                
+          
+    for task in ["liver_ct_grading_binary", "kidney_ct_grading_binary", 
+                "headneck_ct_hpv_binary", "breast_mri_grading_binary", 
+                "glioma_t1c_grading_binary", "sarcoma_t2_grading_binary"]:
+        for views in [8, 16, 24]:
+            for fold in range(FOLDS):
+                mlflow.set_experiment("paper_results")
+                mlflow.start_run()
+                train(task=task, fold=fold, views=views)
+                mlflow.end_run()

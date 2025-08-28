@@ -2,6 +2,7 @@ import torch
 from torch.nn import Linear, BatchNorm1d
 import torch.nn.functional as F
 from torch_geometric.nn import SAGEConv, BatchNorm, GCNConv
+from weighted_SAGEConv import WeightedSAGEConv
 from typing import Literal
 from torch_geometric.nn import global_mean_pool, global_add_pool, global_max_pool
 import inspect
@@ -11,22 +12,23 @@ from torch_geometric.nn.conv import MessagePassing
 import torch
 from torch import nn
 
-class WeightedSAGEConv(MessagePassing):
-    def __init__(self, in_channels, out_channels, **kwargs):
-        super().__init__(**kwargs)
-        self.lin = nn.Linear(in_channels, out_channels)
-        self.lin_update = nn.Linear(in_channels + out_channels, out_channels)
+# class WeightedSAGEConv(MessagePassing):
+#     def __init__(self, in_channels, out_channels, **kwargs):
+#         super().__init__(**kwargs)
+#         self.lin = nn.Linear(in_channels, out_channels)
+#         self.lin_update = nn.Linear(in_channels + out_channels, out_channels)
 
-    def forward(self, x, edge_index, edge_weight=None):
-        if edge_weight is None:
-            edge_weight = torch.ones(edge_index.size(1), device=edge_index.device)
-        return self.propagate(edge_index, x=x, edge_weight=edge_weight)
+#     def forward(self, x, edge_index, edge_weight=None):
+#         if edge_weight is None:
+#             edge_weight = torch.ones(edge_index.size(1), device=edge_index.device)
+#         return self.propagate(edge_index, x=x, edge_weight=edge_weight)
 
-    def message(self, x_j, edge_weight):
-        return edge_weight.view(-1, 1) * x_j  # apply weights to neighbor messages
+#     def message(self, x_j, edge_weight):
+#         return edge_weight.view(-1, 1) * x_j  # apply weights to neighbor messages
 
-    def update(self, aggr_out, x):
-        return self.lin_update(torch.cat([x, aggr_out], dim=1))
+#     def update(self, aggr_out, x):
+#         return self.lin_update(torch.cat([x, aggr_out], dim=1))
+
 
 class MLP(torch.nn.Module):
     def __init__(self, 
@@ -101,7 +103,8 @@ class GNN(torch.nn.Module):
 
         match architecture:                
             case "SAGE":
-                self.conv = SAGEConv
+                # self.conv = SAGEConv
+                self.conv = WeightedSAGEConv
             case "WeightedSAGE":
                 self.conv = WeightedSAGEConv
             case "GCN":
@@ -153,14 +156,19 @@ class GNN(torch.nn.Module):
         x = data.x.to(torch.float32)
         edge_index = data.edge_index.to(torch.long)
         edge_attr = data.edge_attr.to(torch.float32)
-        batch = data.batch                         
+        batch = data.batch
+
+        if data.edge_weight is not None:
+            edge_weight = data.edge_weight
+        else:
+            edge_weight = None
 
         features = []
         for conv, batch_norm in zip(self.convs, self.batch_norms):
             if self.edge_attr_is_available:
-                x = F.relu(batch_norm(conv(x, edge_index, edge_attr)))
+                x = F.relu(batch_norm(conv(x, edge_index, edge_attr, edge_weight=edge_weight)))
             else:
-                x = F.relu(batch_norm(conv(x, edge_index)))
+                x = F.relu(batch_norm(conv(x, edge_index, edge_weight=edge_weight)))
             features.append(x)
         
         x = torch.cat(features, dim=-1) if self.hierarchical_readout else features[-1]

@@ -49,49 +49,37 @@ def train(task: str, fold: int, views: int):
     # create_cv_splits(task=task)
 
     match task:           
-        
-        case "sarcoma_t1_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/*/T1/*_{str(views).zfill(2)}views_planar*.pt")]
-            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/sarcoma_t1_grading_binary_folds.pt")
             
         case "sarcoma_t2_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/*/T2/*_{str(views).zfill(2)}views_planar*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/*/T2/*_{str(views).zfill(2)}views_axial*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/sarcoma_t2_grading_binary_folds.pt")       
         
         case "glioma_t1c_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*T1c*_{str(views).zfill(2)}views_planar*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*T1c*_{str(views).zfill(2)}views_axial*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_t1c_grading_binary_folds.pt")
 
         case "glioma_t1c_grading_binary_custom_zspacing":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_T1c_custom_z_spacing/*T1c*_{str(views).zfill(2)}views_planar*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_T1c_custom_z_spacing/*T1c*_{str(views).zfill(2)}views_axial*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_t1c_grading_binary_folds.pt")
         
-        case "glioma_flair_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*FLAIR*_{str(views).zfill(2)}views_planar*.pt")] 
-            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_flair_grading_binary_folds.pt")
-        
         case "headneck_ct_hpv_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/headneck/converted_nii_merged/*/*_{str(views).zfill(2)}views_planar*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/headneck/converted_nii_merged/*/*_{str(views).zfill(2)}views_axial*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/headneck/headneck_ct_hpv_binary_folds.pt")
         
         case "breast_mri_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/breast/duke_tumor_grading/*_{str(views).zfill(2)}views_planar*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/breast/duke_tumor_grading/*_{str(views).zfill(2)}views_axial*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/breast/breast_mri_grading_binary_folds.pt")
         
         case "kidney_ct_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/kidney/converted_nii/*_{str(views).zfill(2)}views_planar*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/kidney/converted_nii/*_{str(views).zfill(2)}views_axial*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/kidney/kidney_ct_grading_binary_folds.pt")
         
-        case "liver_ct_riskscore_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/converted_nii/*_{str(views).zfill(2)}views_planar*.pt")]
-            folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/liver_ct_riskscore_binary_folds.pt")
-        
         case "liver_ct_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/HCC_CHCC_C2/*_{str(views).zfill(2)}views_planar*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/HCC_CHCC_C2/*_{str(views).zfill(2)}views_axial*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/liver_ct_grading_binary_folds.pt")
         
         case "liver_ct_grading_binary_custom_zspacing":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/HCC_CHCC_C2_custom_z_spacing/*_{str(views).zfill(2)}views_planar*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/HCC_CHCC_C2_custom_z_spacing/*_{str(views).zfill(2)}views_axial*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/liver_ct_grading_binary_folds.pt")
 
         case _:
@@ -417,7 +405,7 @@ if __name__ == "__main__":
                 "glioma_t1c_grading_binary", "sarcoma_t2_grading_binary"]:
         for views in [8, 16, 24]:
             for fold in range(FOLDS):
-                mlflow.set_experiment("transformer_head_only")
+                mlflow.set_experiment("paper_results")
                 mlflow.start_run()
                 train(task=task, fold=fold, views=views)
                 mlflow.end_run()
