@@ -20,8 +20,8 @@ import torch.nn as nn
 
 EPOCHS = 200
 ACCUMULATION_STEPS = 1
-BATCH_SIZE = 256
-WARMUP_EPOCHS = 20
+BATCH_SIZE = 16
+WARMUP_EPOCHS = 100
 # INITIAL_LR = 0.0
 # TARGET_LR = 0.001
 LR = 1e-4
@@ -493,14 +493,14 @@ def train(task: str, method: str, fold: int, init_head: bool = True):
 if __name__ == "__main__":
 
     # for task in ["sarcoma_t2_grading_binary", "headneck_ct_hpv_binary"]:            
-    for task in ["breast_mri_grading_binary", "kidney_ct_grading_binary", "liver_ct_grading_binary", "glioma_t1c_grading_binary", "sarcoma_t2_grading_binary", "headneck_ct_hpv_binary"]:            
+    for task in ["breast_mri_grading_binary", "kidney_ct_grading_binary", "liver_ct_grading_binary", "sarcoma_t2_grading_binary", "headneck_ct_hpv_binary", "glioma_t1c_grading_binary"]:            
     # for task in ["breast_mri_grading_binary"]:            
     # for task in ["liver_ct_grading_binary"]:            
         for method in ["FMCIB"]:
             for init_head in [False]:
                 for fold in range(FOLDS):
 
-                    mlflow.set_experiment(f"{method}_AdamW_batch_size{BATCH_SIZE*ACCUMULATION_STEPS}_warmup{WARMUP_EPOCHS}_new")
+                    mlflow.set_experiment(f"{method}_AdamW_batch_size{BATCH_SIZE*ACCUMULATION_STEPS}_warmup{WARMUP_EPOCHS}")
                     mlflow.start_run()    
                     train(task=task, method=method, fold=fold, init_head=init_head)
                     mlflow.end_run()

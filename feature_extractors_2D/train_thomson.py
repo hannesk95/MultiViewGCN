@@ -66,7 +66,7 @@ def train(task: str, method: str, fold: int, views: int, architecture: str, head
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/sarcoma_t2_grading_binary_folds.pt")       
         
         case "glioma_t1c_grading_binary":
-            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*T1c*{method}_{str(views).zfill(2)}views_{perspective}*.pt")]
+            data = [file for file in glob(f"/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*T1c*zspacing6*{method}_{str(views).zfill(2)}views_{perspective}*.pt")]
             folds_dict = torch.load("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_t1c_grading_binary_folds.pt")
 
         case "glioma_t1c_grading_binary_custom_zspacing":
@@ -441,20 +441,21 @@ if __name__ == "__main__":
 
 
     for head_size in [100000]:
-        for task in ["breast_mri_grading_binary", "kidney_ct_grading_binary", "liver_ct_grading_binary", "glioma_t1c_grading_binary", "sarcoma_t2_grading_binary", "headneck_ct_hpv_binary"]:     
+        # for task in ["breast_mri_grading_binary", "kidney_ct_grading_binary", "liver_ct_grading_binary", "glioma_t1c_grading_binary", "sarcoma_t2_grading_binary", "headneck_ct_hpv_binary"]:     
+        for task in ["glioma_t1c_grading_binary_custom_zspacing"]:     
             for method in ["DINOv2"]:
                 # for architecture in ["thomson_GNN", "thomson_MLP"]:
-                for architecture in ["thomson_GNN"]:
+                for architecture in ["thomson_MLP"]:
                     for views in [8, 16, 24]:
                         # for topology in ["local", "complete", "weighted"]:                    
-                        for topology in ["complete_weighted_hops_linear", "complete_weighted_hops_inverse_square", "complete_uniform", "local"]:                    
+                        for topology in ["complete_weighted_hops_inverse"]:                    
                             for fold in range(FOLDS):
                                 
                                 if (topology in ["weighted", "complete"]) and "MLP" in architecture:
                                     print(f"Skipping task {task} with method {method} and architecture {architecture} for {views} views, as topology {topology} is only supported for GNN architectures.")
                                     continue
                                                    
-                                mlflow.set_experiment("paper_results")                            
+                                mlflow.set_experiment("spacing_6mm")                            
                                 mlflow.start_run()    
                                 train(task=task, method=method, fold=fold, views=views, architecture=architecture, head_size=head_size, topology=topology)
                                 mlflow.end_run()

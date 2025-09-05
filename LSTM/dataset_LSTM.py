@@ -13,6 +13,10 @@ class LSTMDataset(Dataset):
 
         sample = self.data[idx]        
         sample = torch.load(sample, weights_only=False)
+
+        # remove this if you dont want to use spherical slices
+        sample = sample.x
+
         label = torch.tensor(self.labels[idx], dtype=torch.long)
 
         return sample, label
