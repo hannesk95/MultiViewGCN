@@ -429,8 +429,8 @@ def extract_thomson_features(dataset, model_name, views):
             volumes = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*T1c_bias.nii.gz"))
             masks = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_four_sequences/*tumor_segmentation_merged.nii.gz"))
         case "glioma_t1c_grading_binary_custom_zspacing":
-            volumes = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_T1c_custom_z_spacing/*T1c_bias_zspacing6.nii.gz"))
-            masks = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_T1c_custom_z_spacing/*tumor_segmentation_merged_zspacing6.nii.gz"))
+            volumes = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_T1c_custom_z_spacing/*T1c_bias_zspacing3.nii.gz"))
+            masks = sorted(glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/ucsf/glioma_T1c_custom_z_spacing/*tumor_segmentation_merged_zspacing3.nii.gz"))
         case "sarcoma_t2_grading_binary":
             files = [file for file in glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/sarcoma/*/T2/*nii.gz")]
             volumes = sorted([file for file in files if not "label" in file])
@@ -453,7 +453,11 @@ def extract_thomson_features(dataset, model_name, views):
         case "liver_ct_grading_binary_custom_zspacing":
             files = [file for file in glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/HCC_CHCC_C2_custom_z_spacing/*zspacing6.nii.gz")]
             volumes = sorted([file for file in files if not "mask" in file])
-            masks = sorted([file for file in files if "mask" in file])  
+            masks = sorted([file for file in files if "mask" in file]) 
+        case "artificial_sample":
+            volumes = glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/visualize_volume_slicing/irregular_volume.nii.gz")
+            masks = glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/visualize_volume_slicing/irregular_volume.nii.gz")
+
         case _:
             raise ValueError(f"Unknown dataset: {dataset}")
 
@@ -506,6 +510,7 @@ def extract_thomson_features(dataset, model_name, views):
             seg_slices.append(seg_tensor_rotated[:, :, idx_slice])
 
         encodings = []
+        i = 0
         for img_slice, seg_slice in zip(img_slices, seg_slices):
             img_slice = img_slice.numpy()
             img_slice = crop_to_square(img_slice, mask=seg_slice.numpy())
@@ -513,9 +518,10 @@ def extract_thomson_features(dataset, model_name, views):
             img_slice = (img_slice - img_slice.min()) / (img_slice.max() - img_slice.min())
             img_slice = (img_slice * 255).astype(np.uint8)
             img_pil = transforms.ToPILImage()(img_slice)
-            img_pil.save("thomson_output_image.png", format="PNG")
+            img_pil.save(f"thomson_output_image_{i}.png", format="PNG")
             encodings.append(model(img_pil))
-        
+            i += 1
+
         features = torch.concat(encodings, dim=0)
 
         edge_index = to_undirected(graph_edge_index)
@@ -538,7 +544,8 @@ def extract_thomson_features(dataset, model_name, views):
 
 if __name__ == "__main__":
     
-    for dataset in ["glioma_t1c_grading_binary", "sarcoma_t2_grading_binary", "breast_mri_grading_binary", "headneck_ct_hpv_binary", "kidney_ct_grading_binary", "liver_ct_grading_binary"]:
+    for dataset in ["artificial_sample"]:
         for model in ["DINOv2"]:
-            for views in [8, 16, 24]:
+            # for views in [8, 16, 24]:
+            for views in [24]:
                 extract_thomson_features(dataset, model, views)

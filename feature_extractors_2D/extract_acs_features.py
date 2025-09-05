@@ -48,6 +48,9 @@ def extract_acs_features(dataset, model_name, views):
             files = [file for file in glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/data/liver/CECT/HCC_CHCC_C2/*.nii.gz")]
             volumes = sorted([file for file in files if not "mask" in file])
             masks = sorted([file for file in files if "mask" in file])  
+        case "artificial_sample":
+            volumes = glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/visualize_volume_slicing/irregular_volume.nii.gz")
+            masks = glob("/home/johannes/Data/SSD_1.9TB/MultiViewGCN/visualize_volume_slicing/irregular_volume.nii.gz")
         case _:
             raise ValueError(f"Unknown dataset: {dataset}")
 
@@ -199,13 +202,15 @@ def extract_acs_features(dataset, model_name, views):
                         img_slices.append(img_tensor[:, :, i])
 
         encodings = []
+        i = 0
         for idx, img_slice in enumerate(img_slices):
             img_slice = img_slice.numpy()
             img_slice = (img_slice - img_slice.min()) / (img_slice.max() - img_slice.min())
             img_slice = (img_slice * 255).astype(np.uint8)
             img_pil = transforms.ToPILImage()(img_slice)
-            img_pil.save("acs_output_image.png", format="PNG")
+            img_pil.save(f"acs_output_image_{idx}.png", format="PNG")
             encodings.append(model(img_pil))
+            i += 1
         
         features = torch.concat(encodings, dim=0)
 
@@ -216,8 +221,8 @@ def extract_acs_features(dataset, model_name, views):
 
 if __name__ == "__main__":
 
-    for dataset in ["glioma_t1c_grading_binary", "sarcoma_t2_grading_binary", "breast_mri_grading_binary", "headneck_ct_hpv_binary", "kidney_ct_grading_binary", "liver_ct_grading_binary"]:
+    for dataset in ["artificial_sample"]:
         for model in ["DINOv2"]:
             # for views in [3, 8, 16, 24]:
-            for views in [16]:
+            for views in [24]:
                 extract_acs_features(dataset, model, views)
