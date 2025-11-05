@@ -1,16 +1,15 @@
-## <center>TomoGraphView: 3D Medical Image Classification with Omnidirectional Slice Representations and Graph Neural Networks</center>
+## TomoGraphView: 3D Medical Image Classification with Omnidirectional Slice Representations and Graph Neural Networks
 
 
-<center> Johannes Kiechle<sup>1,2,3,4</sup>, Stefan M. Fischer<sup>1,2,3,4</sup>, Daniel M. Lang<sup>1,3</sup>, Cosmin I. Bercea<sup>1,3</sup>, Mattew J. Nyflot<sup>6</sup>, <br> Lina Felsner<sup>1,3</sup>, Julia A. Schnabel<sup>1,3,4,5</sup>, and Jan C. Peeken<sup>2,3</sup>
+Johannes Kiechle<sup>1,2,3,4</sup>, Stefan M. Fischer<sup>1,2,3,4</sup>, Daniel M. Lang<sup>1,3</sup>, Cosmin I. Bercea<sup>1,3</sup>, Mattew J. Nyflot<sup>6</sup>, <br> Lina Felsner<sup>1,3</sup>, Julia A. Schnabel<sup>1,3,4,5</sup>, and Jan C. Peeken<sup>2,3</sup>
 
-<br>
-<sup>1</sup> Technical University of Munich, Germany, 
-<sup>2</sup> Klinikum rechts der Isar, Munich, Germany,
-<sup>3</sup> Helmholtz Munich, Germany, <br>
-<sup>4</sup> Munich Center for Machine Learning,
-<sup>5</sup> King's College London, United Kingdom,
-<sup>6</sup> University of Washingtion, USA </center>
-<br>
+
+<sup>1</sup> Technical University of Munich, Germany <br>
+<sup>2</sup> Klinikum rechts der Isar, Munich, Germany <br>
+<sup>3</sup> Helmholtz Munich, Germany <br>
+<sup>4</sup> Munich Center for Machine Learning <br>
+<sup>5</sup> King's College London, United Kingdom <br>
+<sup>6</sup> University of Washingtion, USA  <br>  <br>
 
 
 <p align="center">
